@@ -14,6 +14,7 @@ Default frameworks, libraries, and tools.
 * TensorFlow.js: An open-source library for machine learning in JavaScript. We'll use a pre-trained model for object detection to identify movement. URL: https://github.com/tensorflow/tfjs
 * COCO-SSD Model: A pre-trained object detection model in the TensorFlow.js model zoo, capable of identifying 90 different types of objects, which we'll use to detect the presence and position of people to infer movement. URL: https://github.com/tensorflow/tfjs-models/blob/master/coco-ssd/README.md
 * IndexedDB: A low-level API for client-side storage of significant amounts of structured data, including files and blobs. This will be used to save the video recording in the browser. URL: https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API
+* Bulma: A lightweight, mobile-first CSS framework that ensures the webapp is visually appealing and usable across devices. Responsive video/canvas sizing and UI controls improve user experience for all screen sizes.
 
 
 ### (1.2) Code Style
