@@ -83,7 +83,7 @@ For example,
 - Maintain a log structure (e.g., array of objects) with:
 	- Object label/type
 	- Detection start and end timestamps
-	- Bounding box coordinates (optional but recommended)
+	- Bounding box coordinates
 - Provide a UI element to download or view the detection log (e.g., as JSON or CSV).
 - Ensure performance is sufficient for near real-time detection on typical hardware.
 

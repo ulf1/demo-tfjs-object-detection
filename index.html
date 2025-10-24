@@ -22,8 +22,12 @@
             <button id="stopRecording" disabled>Stop Recording</button>
         </div>
 
+
         <h2>Live Camera Feed</h2>
-        <video id="liveVideo" width="640" height="480" autoplay muted></video>
+        <div style="position: relative; display: inline-block;">
+            <video id="liveVideo" width="640" height="480" autoplay muted></video>
+            <canvas id="liveCanvas" width="640" height="480" style="position: absolute; left: 0; top: 0; pointer-events: none;"></canvas>
+        </div>
 
         <h2>Recorded Video</h2>
         <video id="recordedVideo" width="640" height="480" controls></video>
@@ -57,6 +61,7 @@
     let detectionLog = [];
 
         // 1. Initialize - Get Webcam Feed and Load Model
+
         async function initialize() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -67,6 +72,8 @@
                 cocoSsdModel = await cocoSsd.load();
                 statusDiv.innerText = "Model loaded. Ready to record.";
 
+                // Start live detection
+                startLiveDetection();
             } catch (err) {
                 console.error("Error initializing:", err);
                 statusDiv.innerText = "Error accessing webcam or loading model. Please grant permissions and refresh.";
@@ -74,6 +81,48 @@
         }
 
         initialize();
+
+        // Live detection logic
+        const liveCanvas = document.getElementById('liveCanvas');
+        const liveCtx = liveCanvas.getContext('2d');
+
+        function startLiveDetection() {
+            async function detectLiveFrame() {
+                if (!cocoSsdModel || liveVideo.paused || liveVideo.ended) {
+                    requestAnimationFrame(detectLiveFrame);
+                    return;
+                }
+                // Draw current video frame to canvas
+                liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
+                // Run detection
+                const predictions = await cocoSsdModel.detect(liveCanvas);
+                // Draw bounding boxes
+                liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+                liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
+                // Color palette for different object classes
+                const colorPalette = [
+                    '#00FF00', '#FF0000', '#0000FF', '#FF00FF', '#00FFFF', '#FFA500', '#FFFF00', '#008000', '#800080', '#A52A2A'
+                ];
+                const classColor = {};
+                let colorIdx = 0;
+                predictions.forEach(pred => {
+                    const [x, y, width, height] = pred.bbox;
+                    if (!classColor[pred.class]) {
+                        classColor[pred.class] = colorPalette[colorIdx % colorPalette.length];
+                        colorIdx++;
+                    }
+                    const color = classColor[pred.class];
+                    liveCtx.strokeStyle = color;
+                    liveCtx.lineWidth = 2;
+                    liveCtx.strokeRect(x, y, width, height);
+                    liveCtx.font = '16px Arial';
+                    liveCtx.fillStyle = color;
+                    liveCtx.fillText(pred.class, x, y > 10 ? y - 5 : 10);
+                });
+                requestAnimationFrame(detectLiveFrame);
+            }
+            detectLiveFrame();
+        }
 
         // 2. Recording Logic
         startRecordingBtn.addEventListener('click', () => {
