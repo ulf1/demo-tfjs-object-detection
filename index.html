@@ -127,8 +127,9 @@
         // 2. Recording Logic
         startRecordingBtn.addEventListener('click', () => {
             recordedChunks = [];
-            const stream = liveVideo.srcObject;
-            mediaRecorder = new MediaRecorder(stream);
+            // Capture the liveCanvas stream (includes overlay)
+            const canvasStream = liveCanvas.captureStream(30); // 30 FPS
+            mediaRecorder = new MediaRecorder(canvasStream);
 
             mediaRecorder.ondataavailable = event => {
                 if (event.data.size > 0) {
