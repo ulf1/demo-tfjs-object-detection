@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,18 +8,57 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <title>Video Movement Detection</title>
     <style>
-        body { font-family: sans-serif; margin-top: 2rem; }
-        .container { max-width: 900px; margin: auto; }
-        .video-wrapper { position: relative; width: 100%; }
-        video, canvas { border: 1px solid #ccc; margin-top: 1rem; width: 100%; height: auto; }
-        #liveCanvas, #detectionCanvas { position: absolute; left: 0; top: 0; pointer-events: none; }
-        #status { font-weight: bold; color: green; }
+        body {
+            font-family: sans-serif;
+            margin-top: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        video,
+        canvas {
+            border: 1px solid #ccc;
+            margin-top: 1rem;
+            width: 100%;
+            height: auto;
+        }
+
+        #liveCanvas,
+        #detectionCanvas {
+            position: absolute;
+            left: 0;
+            top: 0;
+            pointer-events: none;
+        }
+
+        #status {
+            font-weight: bold;
+            color: green;
+        }
+
         @media (max-width: 768px) {
-            .container { max-width: 100%; padding: 0 0.5rem; }
-            video, canvas { width: 100%; height: auto; }
+            .container {
+                max-width: 100%;
+                padding: 0 0.5rem;
+            }
+
+            video,
+            canvas {
+                width: 100%;
+                height: auto;
+            }
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1 class="title is-3 has-text-centered">Record a Short Video and Detect Movement</h1>
@@ -42,9 +82,10 @@
         <div id="status" class="mt-3"></div>
         <div class="buttons is-centered mt-4">
             <button id="downloadLogBtn" class="button is-link" disabled>Download Detection Log (JSON)</button>
-                <button id="downloadVideoBtn" class="button is-info" disabled>Download Recorded Video</button>
+            <button id="downloadVideoBtn" class="button is-info" disabled>Download Recorded Video</button>
         </div>
-        <div id="realtimeLog" style="margin-top:2rem; background:#f9f9f9; border:1px solid #ddd; padding:1rem; max-height:300px; overflow:auto; font-size:0.95em;">
+        <div id="realtimeLog"
+            style="margin-top:2rem; background:#f9f9f9; border:1px solid #ddd; padding:1rem; max-height:300px; overflow:auto; font-size:0.95em;">
             <table id="logTable" class="table is-fullwidth is-striped is-narrow">
                 <thead>
                     <tr>
@@ -73,7 +114,7 @@
         const detectionCanvas = document.getElementById('detectionCanvas');
         const detectionCtx = detectionCanvas.getContext('2d');
         const downloadLogBtn = document.getElementById('downloadLogBtn');
-    const downloadVideoBtn = document.getElementById('downloadVideoBtn');
+        const downloadVideoBtn = document.getElementById('downloadVideoBtn');
 
         let mediaRecorder;
         let recordedChunks = [];
@@ -82,8 +123,8 @@
         let lastObjectPositions = {};
         // For logging detection events
         let detectionLog = [];
-    // For real-time log display
-    const logTableBody = document.querySelector('#logTable tbody');
+        // For real-time log display
+        const logTableBody = document.querySelector('#logTable tbody');
 
         // 1. Initialize - Get Webcam Feed and Load Model
 
@@ -392,4 +433,5 @@
 
     </script>
 </body>
+
 </html>
