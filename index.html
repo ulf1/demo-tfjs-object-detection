@@ -29,6 +29,9 @@
         <video id="recordedVideo" width="640" height="480" controls></video>
         <div id="status"></div>
         <canvas id="detectionCanvas" width="640" height="480" style="display:none;"></canvas>
+        <div class="controls">
+            <button id="downloadLogBtn" disabled>Download Detection Log (JSON)</button>
+        </div>
     </div>
 
     <!-- TensorFlow.js -->
@@ -41,13 +44,17 @@
         const startRecordingBtn = document.getElementById('startRecording');
         const stopRecordingBtn = document.getElementById('stopRecording');
         const statusDiv = document.getElementById('status');
-        const detectionCanvas = document.getElementById('detectionCanvas');
-        const detectionCtx = detectionCanvas.getContext('2d');
+    const detectionCanvas = document.getElementById('detectionCanvas');
+    const detectionCtx = detectionCanvas.getContext('2d');
+    const downloadLogBtn = document.getElementById('downloadLogBtn');
 
         let mediaRecorder;
         let recordedChunks = [];
-        let cocoSsdModel = null;
-        let lastPersonPosition = null;
+    let cocoSsdModel = null;
+    // For tracking all objects
+    let lastObjectPositions = {};
+    // For logging detection events
+    let detectionLog = [];
 
         // 1. Initialize - Get Webcam Feed and Load Model
         async function initialize() {
@@ -104,44 +111,129 @@
         // 3. Movement Detection Logic
         async function detectMovementInVideo() {
             recordedVideo.play();
-            lastPersonPosition = null;
+            lastObjectPositions = {};
+            detectionLog = [];
+            downloadLogBtn.disabled = true;
+
+            // Helper to get current video time in seconds
+            function getCurrentTimestamp() {
+                return recordedVideo.currentTime;
+            }
 
             recordedVideo.addEventListener('play', () => {
                 const detectFrame = async () => {
                     if (recordedVideo.paused || recordedVideo.ended) {
-                        statusDiv.innerText = "Movement detection finished.";
+                        statusDiv.innerText = "Object detection finished.";
+                        downloadLogBtn.disabled = false;
                         return;
                     }
 
                     detectionCtx.drawImage(recordedVideo, 0, 0, detectionCanvas.width, detectionCanvas.height);
                     const predictions = await cocoSsdModel.detect(detectionCanvas);
 
-                    const personPrediction = predictions.find(p => p.class === 'person');
+                    // Draw all bounding boxes and log detections
+                    detectionCtx.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height);
+                    detectionCtx.drawImage(recordedVideo, 0, 0, detectionCanvas.width, detectionCanvas.height);
 
-                    if (personPrediction) {
-                        const [x, y, width, height] = personPrediction.bbox;
-                        const currentPosition = { x, y, width, height };
+                    const currentDetections = {};
+                    // Color palette for different object classes
+                    const colorPalette = [
+                        '#00FF00', '#FF0000', '#0000FF', '#FF00FF', '#00FFFF', '#FFA500', '#FFFF00', '#008000', '#800080', '#A52A2A'
+                    ];
+                    const classColor = {};
+                    let colorIdx = 0;
+                    predictions.forEach(pred => {
+                        const [x, y, width, height] = pred.bbox;
+                        // Assign a color per class
+                        if (!classColor[pred.class]) {
+                            classColor[pred.class] = colorPalette[colorIdx % colorPalette.length];
+                            colorIdx++;
+                        }
+                        const color = classColor[pred.class];
+                        // Draw bounding box
+                        detectionCtx.strokeStyle = color;
+                        detectionCtx.lineWidth = 2;
+                        detectionCtx.strokeRect(x, y, width, height);
+                        detectionCtx.font = '16px Arial';
+                        detectionCtx.fillStyle = color;
+                        detectionCtx.fillText(pred.class, x, y > 10 ? y - 5 : 10);
 
-                        if (lastPersonPosition) {
-                            const dx = Math.abs(currentPosition.x - lastPersonPosition.x);
-                            const dy = Math.abs(currentPosition.y - lastPersonPosition.y);
+                        // Track detections for logging
+                        currentDetections[pred.class] = currentDetections[pred.class] || [];
+                        currentDetections[pred.class].push({
+                            bbox: [x, y, width, height],
+                            score: pred.score
+                        });
+
+                        // Movement tracking (simple: compare to last position)
+                        if (lastObjectPositions[pred.class]) {
+                            const last = lastObjectPositions[pred.class][0];
+                            const dx = Math.abs(x - last.bbox[0]);
+                            const dy = Math.abs(y - last.bbox[1]);
                             const distance = Math.sqrt(dx * dx + dy * dy);
-
-                            if (distance > 10) { // Threshold for movement
-                                statusDiv.innerText = "Movement Detected!";
-                                console.log("Movement detected at: " + new Date().toLocaleTimeString());
+                            if (distance > 10) {
+                                statusDiv.innerText = `Movement Detected: ${pred.class}`;
                             }
                         }
-                        lastPersonPosition = currentPosition;
-                    } else {
-                        lastPersonPosition = null;
-                    }
+                    });
+
+                    // Log detection events (start/end timestamps, label, bbox)
+                    Object.keys(currentDetections).forEach(label => {
+                        currentDetections[label].forEach(obj => {
+                            // Find if this object is already in the log (by label and bbox proximity)
+                            let found = false;
+                            for (let entry of detectionLog) {
+                                if (entry.label === label && bboxClose(entry.bbox, obj.bbox)) {
+                                    entry.end = getCurrentTimestamp();
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found) {
+                                detectionLog.push({
+                                    label: label,
+                                    start: getCurrentTimestamp(),
+                                    end: getCurrentTimestamp(),
+                                    bbox: obj.bbox
+                                });
+                            }
+                        });
+                    });
+
+                    // Remove objects from log if not detected anymore (end timestamp is set)
+                    detectionLog.forEach(entry => {
+                        const stillDetected = currentDetections[entry.label] && currentDetections[entry.label].some(obj => bboxClose(obj.bbox, entry.bbox));
+                        if (!stillDetected && entry.end === entry.start) {
+                            entry.end = getCurrentTimestamp();
+                        }
+                    });
+
+                    lastObjectPositions = currentDetections;
 
                     requestAnimationFrame(detectFrame);
                 };
+
+                // Helper: check if two bboxes are close (for tracking)
+                function bboxClose(b1, b2, threshold = 30) {
+                    const dx = Math.abs(b1[0] - b2[0]);
+                    const dy = Math.abs(b1[1] - b2[1]);
+                    return dx < threshold && dy < threshold;
+                }
+
                 detectFrame();
             });
         }
+
+        // Download detection log as JSON
+        downloadLogBtn.addEventListener('click', () => {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(detectionLog, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", "detection_log.json");
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        });
 
 
         // 4. Local Storage with IndexedDB
