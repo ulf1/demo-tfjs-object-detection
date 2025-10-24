@@ -1,4 +1,4 @@
-# Movement Detection Demo - Copilot Instructions
+# Object Detection Demo - Copilot Instructions
 
 
 ## (1) Standards
