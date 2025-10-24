@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Movement Detection</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin-top: 2rem; }
+        .container { max-width: 800px; margin: auto; }
+        video, canvas { border: 1px solid #ccc; margin-top: 1rem; }
+        .controls { margin: 1rem 0; }
+        button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+        #status { font-weight: bold; color: green; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Record a Short Video and Detect Movement</h1>
+
+        <div class="controls">
+            <button id="startRecording">Start Recording</button>
+            <button id="stopRecording" disabled>Stop Recording</button>
+        </div>
+
+        <h2>Live Camera Feed</h2>
+        <video id="liveVideo" width="640" height="480" autoplay muted></video>
+
+        <h2>Recorded Video</h2>
+        <video id="recordedVideo" width="640" height="480" controls></video>
+        <div id="status"></div>
+        <canvas id="detectionCanvas" width="640" height="480" style="display:none;"></canvas>
+    </div>
+
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+
+    <script>
+        const liveVideo = document.getElementById('liveVideo');
+        const recordedVideo = document.getElementById('recordedVideo');
+        const startRecordingBtn = document.getElementById('startRecording');
+        const stopRecordingBtn = document.getElementById('stopRecording');
+        const statusDiv = document.getElementById('status');
+        const detectionCanvas = document.getElementById('detectionCanvas');
+        const detectionCtx = detectionCanvas.getContext('2d');
+
+        let mediaRecorder;
+        let recordedChunks = [];
+        let cocoSsdModel = null;
+        let lastPersonPosition = null;
+
+        // 1. Initialize - Get Webcam Feed and Load Model
+        async function initialize() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                liveVideo.srcObject = stream;
+
+                // Load the COCO-SSD model
+                statusDiv.innerText = "Loading TensorFlow.js model...";
+                cocoSsdModel = await cocoSsd.load();
+                statusDiv.innerText = "Model loaded. Ready to record.";
+
+            } catch (err) {
+                console.error("Error initializing:", err);
+                statusDiv.innerText = "Error accessing webcam or loading model. Please grant permissions and refresh.";
+            }
+        }
+
+        initialize();
+
+        // 2. Recording Logic
+        startRecordingBtn.addEventListener('click', () => {
+            recordedChunks = [];
+            const stream = liveVideo.srcObject;
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                recordedVideo.src = url;
+                saveVideoToIndexedDB(blob);
+                detectMovementInVideo();
+            };
+
+            mediaRecorder.start();
+            startRecordingBtn.disabled = true;
+            stopRecordingBtn.disabled = false;
+            statusDiv.innerText = "Recording...";
+        });
+
+        stopRecordingBtn.addEventListener('click', () => {
+            mediaRecorder.stop();
+            startRecordingBtn.disabled = false;
+            stopRecordingBtn.disabled = true;
+            statusDiv.innerText = "Processing video...";
+        });
+
+        // 3. Movement Detection Logic
+        async function detectMovementInVideo() {
+            recordedVideo.play();
+            lastPersonPosition = null;
+
+            recordedVideo.addEventListener('play', () => {
+                const detectFrame = async () => {
+                    if (recordedVideo.paused || recordedVideo.ended) {
+                        statusDiv.innerText = "Movement detection finished.";
+                        return;
+                    }
+
+                    detectionCtx.drawImage(recordedVideo, 0, 0, detectionCanvas.width, detectionCanvas.height);
+                    const predictions = await cocoSsdModel.detect(detectionCanvas);
+
+                    const personPrediction = predictions.find(p => p.class === 'person');
+
+                    if (personPrediction) {
+                        const [x, y, width, height] = personPrediction.bbox;
+                        const currentPosition = { x, y, width, height };
+
+                        if (lastPersonPosition) {
+                            const dx = Math.abs(currentPosition.x - lastPersonPosition.x);
+                            const dy = Math.abs(currentPosition.y - lastPersonPosition.y);
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+
+                            if (distance > 10) { // Threshold for movement
+                                statusDiv.innerText = "Movement Detected!";
+                                console.log("Movement detected at: " + new Date().toLocaleTimeString());
+                            }
+                        }
+                        lastPersonPosition = currentPosition;
+                    } else {
+                        lastPersonPosition = null;
+                    }
+
+                    requestAnimationFrame(detectFrame);
+                };
+                detectFrame();
+            });
+        }
+
+
+        // 4. Local Storage with IndexedDB
+        function saveVideoToIndexedDB(blob) {
+            const dbName = "videoDB";
+            const request = indexedDB.open(dbName, 1);
+
+            request.onupgradeneeded = event => {
+                const db = event.target.result;
+                db.createObjectStore("videos", { keyPath: "id", autoIncrement: true });
+            };
+
+            request.onsuccess = event => {
+                const db = event.target.result;
+                const transaction = db.transaction(["videos"], "readwrite");
+                const store = transaction.objectStore("videos");
+                store.add({ video: blob, timestamp: new Date() });
+
+                transaction.oncomplete = () => {
+                    console.log("Video saved to IndexedDB.");
+                };
+                transaction.onerror = (err) => {
+                    console.error("Error saving video:", err);
+                };
+            };
+
+            request.onerror = event => {
+                console.error("Error opening IndexedDB:", event.target.errorCode);
+            };
+        }
+
+    </script>
+</body>
+</html>
