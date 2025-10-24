@@ -97,3 +97,19 @@ For example,
 7. Test detection accuracy, log completeness, and UI usability.
 
 
+# (3.2) Save LiveCanvas Overlay in Video Recording
+
+### Specification
+
+- The video recording should include the liveCanvas overlay (bounding boxes, labels, etc.) as seen during live detection.
+- Use `liveCanvas.captureStream()` to obtain a MediaStream of the canvas, which contains both the video frame and overlay.
+- Use the captured canvas stream as the source for the MediaRecorder, so the output video matches the live view.
+- Ensure the overlay is drawn to the canvas before each frame is captured for recording.
+- The recorded video should display all overlays as they appeared during live detection.
+
+#### Tasks Breakdown
+1. Draw both the video frame and overlay to `liveCanvas` during live detection.
+2. Use `liveCanvas.captureStream()` to get a MediaStream for recording.
+3. Use this stream for the MediaRecorder instead of the raw webcam stream.
+4. Test that the recorded video includes all overlays and matches the live view.
+
