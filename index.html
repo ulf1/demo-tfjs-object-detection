@@ -99,6 +99,22 @@
                 <tbody></tbody>
             </table>
         </div>
+            <!-- Stored Videos Table -->
+            <div id="storedVideosSection" style="margin-top:2rem;">
+                <h2 class="subtitle is-4 has-text-centered">Stored Videos</h2>
+                <table id="storedVideosTable" class="table is-fullwidth is-striped is-narrow">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Date & Time</th>
+                            <th>Size (KB)</th>
+                            <th>Download</th>
+                            <th>Delete</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
     </div>
 
     <!-- TensorFlow.js -->
@@ -431,6 +447,108 @@
             };
         }
 
+        // 5. List all videos stored in IndexedDB
+        function loadStoredVideos() {
+            const dbName = "videoDB";
+            const request = indexedDB.open(dbName, 1);
+            request.onsuccess = event => {
+                const db = event.target.result;
+                const transaction = db.transaction(["videos"], "readonly");
+                const store = transaction.objectStore("videos");
+                const getAllRequest = store.getAll();
+                getAllRequest.onsuccess = () => {
+                    renderStoredVideosTable(getAllRequest.result);
+                };
+            };
+            request.onerror = event => {
+                console.error("Error opening IndexedDB:", event.target.errorCode);
+            };
+        }
+
+        function renderStoredVideosTable(videos) {
+            const tbody = document.querySelector('#storedVideosTable tbody');
+            tbody.innerHTML = '';
+            videos.forEach((entry, idx) => {
+                const tr = document.createElement('tr');
+                const dateStr = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '';
+                const sizeKB = entry.video && entry.video.size ? (entry.video.size / 1024).toFixed(1) : '';
+                tr.innerHTML = `
+                    <td>${idx + 1}</td>
+                    <td>${dateStr}</td>
+                    <td>${sizeKB}</td>
+                    <td><button class="button is-link is-small" data-idx="${idx}" data-action="download">Download</button></td>
+                    <td><button class="button is-danger is-small" data-idx="${idx}" data-action="delete">Delete</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Add event listeners for download and delete
+            tbody.querySelectorAll('button[data-action="download"]').forEach(btn => {
+                btn.onclick = () => {
+                    const entry = videos[parseInt(btn.getAttribute('data-idx'))];
+                    const url = URL.createObjectURL(entry.video);
+                    const dlAnchor = document.createElement('a');
+                    dlAnchor.href = url;
+                    dlAnchor.download = `video_${entry.timestamp ? new Date(entry.timestamp).toISOString().replace(/[:.]/g, '-') : 'unknown'}.webm`;
+                    document.body.appendChild(dlAnchor);
+                    dlAnchor.click();
+                    dlAnchor.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                };
+            });
+            tbody.querySelectorAll('button[data-action="delete"]').forEach(btn => {
+                btn.onclick = () => {
+                    const idx = parseInt(btn.getAttribute('data-idx'));
+                    deleteVideoByIndex(idx, videos);
+                };
+            });
+        }
+
+        function deleteVideoByIndex(idx, videos) {
+            const dbName = "videoDB";
+            const request = indexedDB.open(dbName, 1);
+            request.onsuccess = event => {
+                const db = event.target.result;
+                const transaction = db.transaction(["videos"], "readwrite");
+                const store = transaction.objectStore("videos");
+                const key = videos[idx].id;
+                const deleteRequest = store.delete(key);
+                deleteRequest.onsuccess = () => {
+                    loadStoredVideos();
+                };
+                deleteRequest.onerror = err => {
+                    console.error("Error deleting video:", err);
+                };
+            };
+        }
+
+        // Call loadStoredVideos on page load and after saving a video
+        window.addEventListener('DOMContentLoaded', loadStoredVideos);
+        const originalSaveVideoToIndexedDB = saveVideoToIndexedDB;
+        function saveVideoToIndexedDB(blob) {
+            const dbName = "videoDB";
+            const request = indexedDB.open(dbName, 1);
+            request.onupgradeneeded = event => {
+                const db = event.target.result;
+                db.createObjectStore("videos", { keyPath: "id", autoIncrement: true });
+            };
+            request.onsuccess = event => {
+                const db = event.target.result;
+                const transaction = db.transaction(["videos"], "readwrite");
+                const store = transaction.objectStore("videos");
+                store.add({ video: blob, timestamp: new Date() });
+                transaction.oncomplete = () => {
+                    console.log("Video saved to IndexedDB.");
+                    loadStoredVideos();
+                };
+                transaction.onerror = (err) => {
+                    console.error("Error saving video:", err);
+                };
+            };
+            request.onerror = event => {
+                console.error("Error opening IndexedDB:", event.target.errorCode);
+            };
+        }
     </script>
 </body>
 

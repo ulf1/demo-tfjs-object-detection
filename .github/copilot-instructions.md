@@ -114,3 +114,36 @@ For example,
 3. Use this stream for the MediaRecorder instead of the raw webcam stream.
 4. Test that the recorded video includes all overlays and matches the live view.
 
+
+## (3.3) Show All Videos Stored in IndexedDB
+
+### Specification
+
+- Display a list of all recorded videos stored in IndexedDB.
+- Use an HTML table to show:
+	- Recording date & time (from the `timestamp` field)
+	- Video size in KB
+	- Download button for each video
+	- Deletion button for each video
+
+### Technical Specs
+
+- Query the "videos" object store in IndexedDB to retrieve all stored videos.
+- For each video entry, extract:
+	- `timestamp` (format as local date & time string)
+	- `video` (Blob, use `size` property for KB)
+- Render a table in the UI with columns: Date & Time, Size (KB), Download, Delete.
+- Download button: triggers download of the video as a `.webm` file.
+- Delete button: removes the video entry from IndexedDB and updates the table.
+- Table should update dynamically after deletion or new recording.
+
+### Tasks Breakdown
+
+1. Add a new section in the HTML for the video list table.
+2. Implement a function to read all videos from IndexedDB.
+3. Render the table with required columns and buttons.
+4. Implement download functionality for each video.
+5. Implement deletion functionality for each video.
+6. Refresh the table after any change (add/delete).
+7. Test with multiple recordings and deletions for correctness.
+
