@@ -146,6 +146,14 @@
         const downloadLogBtn = document.getElementById('downloadLogBtn');
         const downloadVideoBtn = document.getElementById('downloadVideoBtn');
 
+// run inference on a smaller hidden canvas for performance
+const hiddenCanvas = document.createElement('canvas');
+const hiddenCtx = hiddenCanvas.getContext('2d');
+const detectionWidth = 320; // A smaller width for detection
+const detectionHeight = 240; // A smaller height
+hiddenCanvas.width = detectionWidth;
+hiddenCanvas.height = detectionHeight;
+
         let mediaRecorder;
         let recordedChunks = [];
         let cocoSsdModel = null;
@@ -263,7 +271,22 @@
                 // Draw current video frame to canvas
                 liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
                 // Run detection
-                const predictions = await cocoSsdModel.detect(liveCanvas);
+                // const predictions = await cocoSsdModel.detect(liveCanvas);
+
+                // Use hidden canvas for better performance
+                hiddenCtx.drawImage(liveVideo, 0, 0, detectionWidth, detectionHeight);
+                const predictions = await cocoSsdModel.detect(hiddenCanvas);
+                predictions.forEach(pred => {
+                    // Scale bbox to liveCanvas size
+                    const scaleX = liveCanvas.width / detectionWidth;
+                    const scaleY = liveCanvas.height / detectionHeight;
+                    pred.bbox[0] *= scaleX;
+                    pred.bbox[1] *= scaleY;
+                    pred.bbox[2] *= scaleX;
+                    pred.bbox[3] *= scaleY;
+                });
+                // console.log('Live predictions:', predictions);
+
                 // Draw bounding boxes
                 liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
                 liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
