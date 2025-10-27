@@ -147,3 +147,27 @@ For example,
 6. Refresh the table after any change (add/delete).
 7. Test with multiple recordings and deletions for correctness.
 
+## (3.4) Detect device's cameras
+
+### Specification
+
+- Implement functionality to detect and list all available camera devices on the user's system.
+- Use the MediaDevices API to enumerate video input devices.
+- Display the list of detected cameras in the UI, allowing the user to select which camera to use for recording.
+
+### Technical Specs
+
+- Use `navigator.mediaDevices.enumerateDevices()` to get a list of all media devices.
+- Filter the list to include only video input devices (i.e., cameras).
+- For each detected camera, extract:
+	- `deviceId` (unique identifier for the camera)
+	- `label` (human-readable name of the camera)
+- Render the camera list in the UI with options to select a camera.
+
+### Tasks Breakdown
+
+1. Implement a function to detect and list all available cameras.
+2. Update the UI to display the list of cameras.
+3. Allow the user to select a camera from the list.
+4. Update the video stream source based on the selected camera.
+5. Test with multiple cameras to ensure correct detection and selection.

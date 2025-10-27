@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Bulma CSS Framework -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <title>Video Movement Detection</title>
+    <title>Object Detection</title>
     <style>
         body {
             font-family: sans-serif;
@@ -63,6 +63,18 @@
     <div class="container">
         <h1 class="title is-3 has-text-centered">Record a Short Video and Detect Movement</h1>
 
+
+        <!-- Camera Selection UI -->
+        <div class="field has-addons is-justify-content-center mb-4">
+            <div class="control">
+                <div class="select">
+                    <select id="cameraSelect"></select>
+                </div>
+            </div>
+            <div class="control">
+                <button id="refreshCameras" class="button is-light" title="Refresh camera list">🔄</button>
+            </div>
+        </div>
         <div class="buttons is-centered mb-4">
             <button id="startRecording" class="button is-primary">Start Recording</button>
             <button id="stopRecording" class="button is-danger" disabled>Stop Recording</button>
@@ -122,7 +134,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 
     <script>
-        const liveVideo = document.getElementById('liveVideo');
+    const liveVideo = document.getElementById('liveVideo');
+    const cameraSelect = document.getElementById('cameraSelect');
+    const refreshCamerasBtn = document.getElementById('refreshCameras');
         const recordedVideo = document.getElementById('recordedVideo');
         const startRecordingBtn = document.getElementById('startRecording');
         const stopRecordingBtn = document.getElementById('stopRecording');
@@ -144,21 +158,75 @@
 
         // 1. Initialize - Get Webcam Feed and Load Model
 
-        async function initialize() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                liveVideo.srcObject = stream;
 
+        // --- Camera Detection and Selection ---
+        let currentStream = null;
+        let selectedDeviceId = null;
+
+        async function getCameraDevices() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                return devices.filter(device => device.kind === 'videoinput');
+            } catch (err) {
+                console.error('Error enumerating devices:', err);
+                return [];
+            }
+        }
+
+        async function populateCameraSelect() {
+            const cameras = await getCameraDevices();
+            cameraSelect.innerHTML = '';
+            cameras.forEach((cam, idx) => {
+                const option = document.createElement('option');
+                option.value = cam.deviceId;
+                option.textContent = cam.label || `Camera ${idx + 1}`;
+                cameraSelect.appendChild(option);
+            });
+            // If no camera is selected, select the first
+            if (!selectedDeviceId && cameras.length > 0) {
+                selectedDeviceId = cameras[0].deviceId;
+                cameraSelect.value = selectedDeviceId;
+            }
+        }
+
+        async function startCameraStream(deviceId) {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+            try {
+                const constraints = { video: { deviceId: deviceId ? { exact: deviceId } : undefined }, audio: false };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                liveVideo.srcObject = stream;
+                currentStream = stream;
+            } catch (err) {
+                console.error('Error starting camera stream:', err);
+                statusDiv.innerText = 'Error accessing selected camera.';
+            }
+        }
+
+        cameraSelect.addEventListener('change', async (e) => {
+            selectedDeviceId = cameraSelect.value;
+            await startCameraStream(selectedDeviceId);
+        });
+
+        refreshCamerasBtn.addEventListener('click', async () => {
+            await populateCameraSelect();
+        });
+
+        // --- Initialization ---
+        async function initialize() {
+            await populateCameraSelect();
+            await startCameraStream(selectedDeviceId);
+            try {
                 // Load the COCO-SSD model
                 statusDiv.innerText = "Loading TensorFlow.js model...";
                 cocoSsdModel = await cocoSsd.load();
                 statusDiv.innerText = "Model loaded. Ready to record.";
-
                 // Start live detection
                 startLiveDetection();
             } catch (err) {
                 console.error("Error initializing:", err);
-                statusDiv.innerText = "Error accessing webcam or loading model. Please grant permissions and refresh.";
+                statusDiv.innerText = "Error loading model. Please refresh.";
             }
         }
 
