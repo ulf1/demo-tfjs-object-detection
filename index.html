@@ -79,6 +79,13 @@
         <div class="buttons is-centered mb-4">
             <button id="startRecording" class="button is-primary">Start Recording</button>
             <button id="stopRecording" class="button is-danger" disabled>Stop Recording</button>
+            <div class="field ml-4" style="display:inline-block; vertical-align:middle;">
+                <label class="label" for="fpsSlider" style="margin-bottom:0;">FPS: <span id="fpsValue">5</span></label>
+                <div class="control">
+                    <input id="fpsSlider" type="range" min="1" max="20" value="5" style="width:140px; display:inline-block; vertical-align:middle;" />
+                </div>
+                <p class="help" style="font-size:0.9em;">Frames per second (1-20)</p>
+            </div>
         </div>
 
         <h2 class="subtitle is-4 has-text-centered">Live Camera Feed</h2>
@@ -155,10 +162,26 @@ hiddenCanvas.width = detectionWidth;
 hiddenCanvas.height = detectionHeight;
 
 // --- FPS Limiter Variables ---
-let fps = 5; // Target frames per second
+const fpsSlider = document.getElementById('fpsSlider');
+const fpsValue = document.getElementById('fpsValue');
+let fps = parseInt(fpsSlider?.value, 10) || 5; // Target frames per second
 let fpsInterval = 1000 / fps; // The required time between frames in milliseconds
 let then = Date.now(); // The timestamp of the last executed frame
 let startTime = then; // For calculating average FPS
+
+if (fpsSlider && fpsValue) {
+    fpsSlider.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val) || val < 1) val = 1;
+        if (val > 20) val = 20;
+        fps = val;
+        fpsInterval = 1000 / fps;
+        fpsSlider.value = val;
+        fpsValue.textContent = val;
+    });
+    // Initialize label
+    fpsValue.textContent = fpsSlider.value;
+}
 
 
         let mediaRecorder;
