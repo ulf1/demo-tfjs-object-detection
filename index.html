@@ -220,7 +220,8 @@
             try {
                 // Load the COCO-SSD model
                 statusDiv.innerText = "Loading TensorFlow.js model...";
-                cocoSsdModel = await cocoSsd.load();
+                // load a lightweight version for performance
+                cocoSsdModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
                 statusDiv.innerText = "Model loaded. Ready to record.";
                 // Start live detection
                 startLiveDetection();
