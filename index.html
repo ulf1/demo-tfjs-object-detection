@@ -63,6 +63,7 @@
     <div class="container">
         <h1 class="title is-3 has-text-centered">Record a Short Video and Detect Movement</h1>
 
+        <div id="status" class="mt-3"></div>
 
         <!-- Camera Selection UI -->
         <div class="field has-addons is-justify-content-center mb-4">
@@ -91,7 +92,6 @@
             <video id="recordedVideo" controls></video>
             <canvas id="detectionCanvas" style="display:none;"></canvas>
         </div>
-        <div id="status" class="mt-3"></div>
         <div class="buttons is-centered mt-4">
             <button id="downloadLogBtn" class="button is-link" disabled>Download Detection Log (JSON)</button>
             <button id="downloadVideoBtn" class="button is-info" disabled>Download Recorded Video</button>
