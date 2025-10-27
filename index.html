@@ -154,6 +154,13 @@ const detectionHeight = 240; // A smaller height
 hiddenCanvas.width = detectionWidth;
 hiddenCanvas.height = detectionHeight;
 
+// --- FPS Limiter Variables ---
+let fps = 5; // Target frames per second
+let fpsInterval = 1000 / fps; // The required time between frames in milliseconds
+let then = Date.now(); // The timestamp of the last executed frame
+let startTime = then; // For calculating average FPS
+
+
         let mediaRecorder;
         let recordedChunks = [];
         let cocoSsdModel = null;
@@ -268,6 +275,16 @@ hiddenCanvas.height = detectionHeight;
                     requestAnimationFrame(detectLiveFrame);
                     return;
                 }
+
+                // Check if enough time has passed to run the next detection
+                const now = Date.now();
+                const elapsed = now - then;
+                if (elapsed < fpsInterval) {
+                    requestAnimationFrame(detectLiveFrame);
+                    return;
+                }
+                then = now;
+
                 // Draw current video frame to canvas
                 liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
                 // Run detection
@@ -285,7 +302,7 @@ hiddenCanvas.height = detectionHeight;
                     pred.bbox[2] *= scaleX;
                     pred.bbox[3] *= scaleY;
                 });
-                // console.log('Live predictions:', predictions);
+                console.log('Live predictions:', predictions);
 
                 // Draw bounding boxes
                 liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
