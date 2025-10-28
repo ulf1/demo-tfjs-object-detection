@@ -1,3 +1,37 @@
+// --- IndexedDB Helper: Ensure Schema ---
+function ensureIndexedDBSchema(dbName = 'annotatedVideosDB', storeName = 'videos', version = 1) {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(dbName, version);
+        let upgraded = false;
+        request.onupgradeneeded = event => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(storeName)) {
+                db.createObjectStore(storeName, { keyPath: 'id', autoIncrement: true });
+            }
+            upgraded = true;
+        };
+        request.onsuccess = event => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(storeName)) {
+                // DB is corrupt or missing store: delete and recreate
+                db.close();
+                indexedDB.deleteDatabase(dbName).onsuccess = () => {
+                    // Recreate
+                    const req2 = indexedDB.open(dbName, version);
+                    req2.onupgradeneeded = e2 => {
+                        const db2 = e2.target.result;
+                        db2.createObjectStore(storeName, { keyPath: 'id', autoIncrement: true });
+                    };
+                    req2.onsuccess = e2 => resolve(e2.target.result);
+                    req2.onerror = e2 => reject(e2.target.errorCode);
+                };
+            } else {
+                resolve(db);
+            }
+        };
+        request.onerror = event => reject(event.target.errorCode);
+    });
+}
 // index-upload.js
 // Handles video upload, annotation, storage, and UI updates for index-upload.html
 
@@ -146,15 +180,8 @@ async function annotateVideo(file, width, height) {
 
 // --- IndexedDB Storage ---
 function saveAnnotatedVideoToIndexedDB(blob, log, meta) {
-    return new Promise((resolve, reject) => {
-        const dbName = 'annotatedVideosDB';
-        const request = indexedDB.open(dbName, 1);
-        request.onupgradeneeded = event => {
-            const db = event.target.result;
-            db.createObjectStore('videos', { keyPath: 'id', autoIncrement: true });
-        };
-        request.onsuccess = event => {
-            const db = event.target.result;
+    return ensureIndexedDBSchema().then(db => {
+        return new Promise((resolve, reject) => {
             const tx = db.transaction(['videos'], 'readwrite');
             const store = tx.objectStore('videos');
             store.add({
@@ -165,17 +192,13 @@ function saveAnnotatedVideoToIndexedDB(blob, log, meta) {
             });
             tx.oncomplete = () => resolve();
             tx.onerror = err => reject(err);
-        };
-        request.onerror = event => reject(event.target.errorCode);
+        });
     });
 }
 
 // --- Load & Render Stored Videos Table ---
 function loadStoredVideos() {
-    const dbName = 'annotatedVideosDB';
-    const request = indexedDB.open(dbName, 1);
-    request.onsuccess = event => {
-        const db = event.target.result;
+    ensureIndexedDBSchema().then(db => {
         const tx = db.transaction(['videos'], 'readonly');
         const store = tx.objectStore('videos');
         const getAll = store.getAll();
@@ -189,10 +212,9 @@ function loadStoredVideos() {
         getAll.onerror = () => {
             videosTable.innerHTML = '<tr><td colspan="7" class="has-text-centered has-text-danger">Error loading videos from storage.</td></tr>';
         };
-    };
-    request.onerror = () => {
+    }).catch(() => {
         videosTable.innerHTML = '<tr><td colspan="7" class="has-text-centered has-text-danger">Error opening IndexedDB.</td></tr>';
-    };
+    });
 }
 
 function renderVideosTable(videos) {
@@ -225,10 +247,7 @@ function renderVideosTable(videos) {
 
 function handleTableAction(action, idx) {
     // Reload videos from DB to get up-to-date
-    const dbName = 'annotatedVideosDB';
-    const request = indexedDB.open(dbName, 1);
-    request.onsuccess = event => {
-        const db = event.target.result;
+    ensureIndexedDBSchema().then(db => {
         const tx = db.transaction(['videos'], 'readonly');
         const store = tx.objectStore('videos');
         const getAll = store.getAll();
@@ -267,7 +286,7 @@ function handleTableAction(action, idx) {
                 previewModal.classList.add('is-active');
             }
         };
-    };
+    });
 }
 
 // --- Modal Logic ---
