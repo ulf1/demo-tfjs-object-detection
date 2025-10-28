@@ -80,7 +80,7 @@
                 <button id="toggleCameraBtn" class="button is-info" style="margin-right: 1em;">Stop Camera</button>
                 <button id="toggleDetectionBtn" class="button is-warning">Start Detection</button>
                 <button id="downloadPredictionsBtn" class="button is-link">Download JSON</button>
-                
+                <button id="resetPredictionsBtn" class="button is-link">Reset Predictions</button>
             </div>
             <!-- Recording buttons removed for realtime-only mode -->
             <div class="field ml-4" style="display:inline-block; vertical-align:middle;">
@@ -429,6 +429,15 @@ if (downloadPredictionsBtn) {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }, 100);
+    });
+}
+
+// --- Reset Predictions ---
+const resetPredictionsBtn = document.getElementById('resetPredictionsBtn');
+if (resetPredictionsBtn) {
+    resetPredictionsBtn.addEventListener('click', () => {
+        predictionsHistory = [];
+        updatePredictionsTable([]);
     });
 }
 
