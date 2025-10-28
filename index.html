@@ -187,6 +187,7 @@ if (fpsSlider && fpsValue) {
         let mediaRecorder;
         let recordedChunks = [];
         let cocoSsdModel = null;
+        let predictionLog = [];
         // For tracking all objects
         let lastObjectPositions = {};
         // For logging detection events
@@ -353,7 +354,15 @@ if (fpsSlider && fpsValue) {
                     liveCtx.font = '16px Arial';
                     liveCtx.fillStyle = color;
                     liveCtx.fillText(pred.class, x, y > 10 ? y - 5 : 10);
+                    // save predicions to log
+                    predictionLog.push({
+                        timestamp: Date.now(),
+                        class: pred.class,
+                        score: pred.score,
+                        bbox: pred.bbox
+                    });
                 });
+
                 requestAnimationFrame(detectLiveFrame);
             }
             detectLiveFrame();
@@ -362,6 +371,7 @@ if (fpsSlider && fpsValue) {
         // 2. Recording Logic
         startRecordingBtn.addEventListener('click', () => {
             recordedChunks = []; // reset
+            predictionLog = []; // reset
             // Capture the liveCanvas stream (includes overlay)
             const canvasStream = liveCanvas.captureStream(30); // 30 FPS
             mediaRecorder = new MediaRecorder(canvasStream);
@@ -376,7 +386,9 @@ if (fpsSlider && fpsValue) {
                 const blob = new Blob(recordedChunks, { type: 'video/webm' });
                 const url = URL.createObjectURL(blob);
                 recordedVideo.src = url;
-                saveVideoToIndexedDB(blob);
+                saveVideoToIndexedDB(blob, predictionLog);
+
+                // 
                 detectMovementInVideo();
                 // Enable download button and set up download
                 downloadVideoBtn.disabled = false;
@@ -553,32 +565,6 @@ if (fpsSlider && fpsValue) {
             dlAnchor.remove();
         });
 
-
-        // 4. Local Storage with IndexedDB
-        // function saveVideoToIndexedDB(blob) {
-        //     const dbName = "videoDB";
-        //     const request = indexedDB.open(dbName, 1);
-        //     request.onupgradeneeded = event => {
-        //         const db = event.target.result;
-        //         db.createObjectStore("videos", { keyPath: "id", autoIncrement: true });
-        //     };
-        //     request.onsuccess = event => {
-        //         const db = event.target.result;
-        //         const transaction = db.transaction(["videos"], "readwrite");
-        //         const store = transaction.objectStore("videos");
-        //         store.add({ video: blob, timestamp: new Date() });
-        //         transaction.oncomplete = () => {
-        //             console.log("Video saved to IndexedDB.");
-        //         };
-        //         transaction.onerror = (err) => {
-        //             console.error("Error saving video:", err);
-        //         };
-        //     };
-        //     request.onerror = event => {
-        //         console.error("Error opening IndexedDB:", event.target.errorCode);
-        //     };
-        // }
-
         // 5. List all videos stored in IndexedDB
         function loadStoredVideos() {
             const dbName = "videoDB";
@@ -656,8 +642,8 @@ if (fpsSlider && fpsValue) {
 
         // Call loadStoredVideos on page load and after saving a video
         window.addEventListener('DOMContentLoaded', loadStoredVideos);
-        // const originalSaveVideoToIndexedDB = saveVideoToIndexedDB;
-        function saveVideoToIndexedDB(blob) {
+
+        function saveVideoToIndexedDB(blob, predictionLog) {
             const dbName = "videoDB";
             const request = indexedDB.open(dbName, 1);
             request.onupgradeneeded = event => {
@@ -669,8 +655,7 @@ if (fpsSlider && fpsValue) {
                 const transaction = db.transaction(["videos"], "readwrite");
                 const store = transaction.objectStore("videos");
                 // Save the detectionLog (predictions) together with the video
-                console.log(detectionLog)
-                store.add({ video: blob, timestamp: new Date(), predictions: Array.isArray(detectionLog) ? detectionLog.slice() : [] });
+                store.add({ video: blob, timestamp: new Date(), predictions: Array.isArray(predictionLog) ? predictionLog.slice() : [] });
                 transaction.oncomplete = () => {
                     console.log("Video and predictions saved to IndexedDB.");
                     loadStoredVideos();
