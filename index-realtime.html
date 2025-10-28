@@ -98,6 +98,26 @@
             <canvas id="liveCanvas"></canvas>
         </div>
 
+        <!-- Predictions Table -->
+        <div class="mt-5">
+            <h3 class="subtitle is-5 has-text-centered">Latest Predictions</h3>
+            <div style="overflow-x:auto;">
+                <table class="table is-striped is-fullwidth" id="predictionsTable">
+                    <thead>
+                        <tr>
+                            <th>Class</th>
+                            <th>BBox [x, y, w, h]</th>
+                            <th>Score (%)</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
 
     <!-- TensorFlow.js -->
@@ -311,8 +331,12 @@ function startLiveDetection() {
             pred.bbox[1] *= scaleY;
             pred.bbox[2] *= scaleX;
             pred.bbox[3] *= scaleY;
+            pred['timestamp'] = now;
         });
+        // --- Update predictions table ---
+        updatePredictionsTable(predictions);
         console.log('Live predictions:', predictions);
+
 
         // Draw bounding boxes
         liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
@@ -342,6 +366,49 @@ function startLiveDetection() {
     }
     detectLiveFrame();
 }
+
+
+// --- Predictions Table Logic ---
+const predictionsTableBody = document.querySelector('#predictionsTable tbody');
+let predictionsHistory = [];
+
+function updatePredictionsTable(predictions) {
+    if (!predictionsTableBody) return;
+    // Add latest predictions to the top of the history
+    if (predictions && predictions.length > 0) {
+        // Store a shallow copy of predictions (with timestamp)
+        predictionsHistory.unshift({
+            time: Date.now(),
+            preds: predictions.map(p => ({
+                class: p.class,
+                bbox: p.bbox.map(v => Math.round(v)),
+                score: Math.round(p.score * 1000) / 10, // 1 decimal
+                timestamp: p.timestamp
+            }))
+        });
+        // Limit history to 20 entries
+        if (predictionsHistory.length > 20) predictionsHistory.length = 20;
+    }
+    // Flatten history: show latest predictions at the top, one row per object
+    let rows = [];
+    for (let entry of predictionsHistory) {
+        for (let pred of entry.preds) {
+            rows.push(pred);
+        }
+    }
+    // Only show the latest 20 objects
+    rows = rows.slice(0, 20);
+    // Build table rows
+    predictionsTableBody.innerHTML = rows.map(pred =>
+        `<tr>
+            <td>${pred.class}</td>
+            <td>[${pred.bbox.join(', ')}]</td>
+            <td>${pred.score.toFixed(1)}</td>
+            <td>${new Date(pred.timestamp).toISOString()}</td>
+        </tr>`
+    ).join('');
+}
+
 
     </script>
 </body>
