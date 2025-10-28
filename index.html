@@ -310,8 +310,12 @@ if (fpsSlider && fpsValue) {
 
                 // Draw current video frame to canvas
                 liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
-                // Run detection
-                // const predictions = await cocoSsdModel.detect(liveCanvas);
+
+                // skip model inference if start buttons isn't pushed
+                if (!(mediaRecorder && mediaRecorder.state === "recording")) {
+                    requestAnimationFrame(detectLiveFrame);
+                    return;
+                }
 
                 // Use hidden canvas for better performance
                 hiddenCtx.drawImage(liveVideo, 0, 0, detectionWidth, detectionHeight);
