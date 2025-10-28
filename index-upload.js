@@ -38,6 +38,8 @@ function ensureIndexedDBSchema(dbName = 'annotatedVideosDB', storeName = 'videos
 // --- DOM Elements ---
 const videoUpload = document.getElementById('videoUpload');
 const resolutionSelect = document.getElementById('resolutionSelect');
+const fpsSlider = document.getElementById('fpsSlider');
+const fpsValue = document.getElementById('fpsValue');
 const processBtn = document.getElementById('processBtn');
 const statusDiv = document.getElementById('status');
 const previewSection = document.getElementById('previewSection');
@@ -71,6 +73,13 @@ const RESOLUTIONS = {
 })();
 
 // --- Video Upload Handler ---
+// --- FPS Slider Handler ---
+if (fpsSlider && fpsValue) {
+    fpsSlider.addEventListener('input', () => {
+        fpsValue.textContent = fpsSlider.value;
+    });
+    fpsValue.textContent = fpsSlider.value;
+}
 videoUpload.addEventListener('change', e => {
     uploadedFile = e.target.files[0] || null;
     processBtn.disabled = !uploadedFile;
@@ -88,7 +97,8 @@ processBtn.addEventListener('click', async () => {
     try {
         const resKey = resolutionSelect.value;
         const { width, height } = RESOLUTIONS[resKey];
-        const { blob, log, meta } = await annotateVideo(uploadedFile, width, height);
+        const fps = fpsSlider ? parseInt(fpsSlider.value, 10) : 10;
+        const { blob, log, meta } = await annotateVideo(uploadedFile, width, height, fps);
         annotatedBlob = blob;
         annotationLog = log;
         annotatedMeta = meta;
@@ -108,7 +118,7 @@ processBtn.addEventListener('click', async () => {
 });
 
 // --- Annotate Video Function ---
-async function annotateVideo(file, width, height) {
+async function annotateVideo(file, width, height, fps = 10) {
     return new Promise((resolve, reject) => {
         const video = document.createElement('video');
         video.src = URL.createObjectURL(file);
@@ -117,7 +127,6 @@ async function annotateVideo(file, width, height) {
         video.preload = 'auto';
         video.onloadedmetadata = async () => {
             const duration = video.duration;
-            const fps = 10; // Reasonable for annotation
             const totalFrames = Math.floor(duration * fps);
             const canvas = document.createElement('canvas');
             canvas.width = width;
