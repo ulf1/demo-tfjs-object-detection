@@ -79,6 +79,8 @@
             <div class="has-text-centered mb-4">
                 <button id="toggleCameraBtn" class="button is-info" style="margin-right: 1em;">Stop Camera</button>
                 <button id="toggleDetectionBtn" class="button is-warning">Start Detection</button>
+                <button id="downloadPredictionsBtn" class="button is-link">Download JSON</button>
+                
             </div>
             <!-- Recording buttons removed for realtime-only mode -->
             <div class="field ml-4" style="display:inline-block; vertical-align:middle;">
@@ -407,6 +409,27 @@ function updatePredictionsTable(predictions) {
             <td>${new Date(pred.timestamp).toISOString()}</td>
         </tr>`
     ).join('');
+}
+
+// --- Download Predictions as JSON ---
+const downloadPredictionsBtn = document.getElementById('downloadPredictionsBtn');
+if (downloadPredictionsBtn) {
+    downloadPredictionsBtn.addEventListener('click', () => {
+        const dataStr = JSON.stringify(predictionsHistory, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `detected-objects-${ts}.json`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+    });
 }
 
 
