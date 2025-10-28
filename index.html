@@ -99,25 +99,7 @@
             <video id="recordedVideo" controls></video>
             <canvas id="detectionCanvas" style="display:none;"></canvas>
         </div>
-        <div class="buttons is-centered mt-4">
-            <button id="downloadLogBtn" class="button is-link" disabled>Download Detection Log (JSON)</button>
-            <button id="downloadVideoBtn" class="button is-info" disabled>Download Recorded Video</button>
-        </div>
-        <div id="realtimeLog"
-            style="margin-top:2rem; background:#f9f9f9; border:1px solid #ddd; padding:1rem; max-height:300px; overflow:auto; font-size:0.95em;">
-            <table id="logTable" class="table is-fullwidth is-striped is-narrow">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Label</th>
-                        <th>Start (s)</th>
-                        <th>End (s)</th>
-                        <th>BBox [x, y, w, h]</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
+
             <!-- Stored Videos Table -->
             <div id="storedVideosSection" style="margin-top:2rem;">
                 <h2 class="subtitle is-4 has-text-centered">Stored Videos</h2>
@@ -141,17 +123,17 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 
     <script>
-    const liveVideo = document.getElementById('liveVideo');
-    const cameraSelect = document.getElementById('cameraSelect');
-    const refreshCamerasBtn = document.getElementById('refreshCameras');
-        const recordedVideo = document.getElementById('recordedVideo');
-        const startRecordingBtn = document.getElementById('startRecording');
-        const stopRecordingBtn = document.getElementById('stopRecording');
-        const statusDiv = document.getElementById('status');
-        const detectionCanvas = document.getElementById('detectionCanvas');
-        const detectionCtx = detectionCanvas.getContext('2d');
-        const downloadLogBtn = document.getElementById('downloadLogBtn');
-        const downloadVideoBtn = document.getElementById('downloadVideoBtn');
+const liveVideo = document.getElementById('liveVideo');
+const cameraSelect = document.getElementById('cameraSelect');
+const refreshCamerasBtn = document.getElementById('refreshCameras');
+const recordedVideo = document.getElementById('recordedVideo');
+const startRecordingBtn = document.getElementById('startRecording');
+const stopRecordingBtn = document.getElementById('stopRecording');
+const statusDiv = document.getElementById('status');
+const detectionCanvas = document.getElementById('detectionCanvas');
+const detectionCtx = detectionCanvas.getContext('2d');
+const downloadLogBtn = document.getElementById('downloadLogBtn');
+const downloadVideoBtn = document.getElementById('downloadVideoBtn');
 
 // run inference on a smaller hidden canvas for performance
 const hiddenCanvas = document.createElement('canvas');
@@ -184,503 +166,352 @@ if (fpsSlider && fpsValue) {
 }
 
 
-        let mediaRecorder;
-        let recordedChunks = [];
-        let cocoSsdModel = null;
-        // For tracking all objects
-        let lastObjectPositions = {};
-        // For logging detection events
-        let detectionLog = [];
-        // For real-time log display
-        const logTableBody = document.querySelector('#logTable tbody');
+let mediaRecorder;
+let recordedChunks = [];
+let cocoSsdModel = null;
+let predictionLog = [];
+// For tracking all objects
+let lastObjectPositions = {};
+// For logging detection events
+let detectionLog = [];
+// For real-time log display
+const logTableBody = document.querySelector('#logTable tbody');
 
-        // 1. Initialize - Get Webcam Feed and Load Model
+// 1. Initialize - Get Webcam Feed and Load Model
 
 
-        // --- Camera Detection and Selection ---
-        let currentStream = null;
-        let selectedDeviceId = null;
+// --- Camera Detection and Selection ---
+let currentStream = null;
+let selectedDeviceId = null;
 
-        async function getCameraDevices() {
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                return devices.filter(device => device.kind === 'videoinput');
-            } catch (err) {
-                console.error('Error enumerating devices:', err);
-                return [];
-            }
+async function getCameraDevices() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices.filter(device => device.kind === 'videoinput');
+    } catch (err) {
+        console.error('Error enumerating devices:', err);
+        return [];
+    }
+}
+
+async function populateCameraSelect() {
+    const cameras = await getCameraDevices();
+    cameraSelect.innerHTML = '';
+    cameras.forEach((cam, idx) => {
+        const option = document.createElement('option');
+        option.value = cam.deviceId;
+        option.textContent = cam.label || `Camera ${idx + 1}`;
+        cameraSelect.appendChild(option);
+    });
+    // If no camera is selected, select the first
+    if (!selectedDeviceId && cameras.length > 0) {
+        selectedDeviceId = cameras[0].deviceId;
+        cameraSelect.value = selectedDeviceId;
+    }
+}
+
+async function startCameraStream(deviceId) {
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+    }
+    try {
+        const constraints = { video: { deviceId: deviceId ? { exact: deviceId } : undefined }, audio: false };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        liveVideo.srcObject = stream;
+        currentStream = stream;
+    } catch (err) {
+        console.error('Error starting camera stream:', err);
+        statusDiv.innerText = 'Error accessing selected camera.';
+    }
+}
+
+cameraSelect.addEventListener('change', async (e) => {
+    selectedDeviceId = cameraSelect.value;
+    await startCameraStream(selectedDeviceId);
+});
+
+refreshCamerasBtn.addEventListener('click', async () => {
+    await populateCameraSelect();
+});
+
+// --- Initialization ---
+async function initialize() {
+    await populateCameraSelect();
+    await startCameraStream(selectedDeviceId);
+    try {
+        // Load the COCO-SSD model
+        statusDiv.innerText = "Loading TensorFlow.js model...";
+        // load a lightweight version for performance
+        cocoSsdModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+        statusDiv.innerText = "Model loaded. Ready to record.";
+        // Start live detection
+        startLiveDetection();
+    } catch (err) {
+        console.error("Error initializing:", err);
+        statusDiv.innerText = "Error loading model. Please refresh.";
+    }
+}
+
+initialize();
+
+// Live detection logic
+const liveCanvas = document.getElementById('liveCanvas');
+const liveCtx = liveCanvas.getContext('2d');
+
+// Responsive canvas sizing
+function resizeCanvases() {
+    const videoWrappers = document.querySelectorAll('.video-wrapper');
+    videoWrappers.forEach(wrapper => {
+        const video = wrapper.querySelector('video');
+        const canvas = wrapper.querySelector('canvas');
+        if (video && canvas) {
+            // Set canvas size to match video size
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+        }
+    });
+}
+window.addEventListener('resize', resizeCanvases);
+liveVideo.addEventListener('loadedmetadata', resizeCanvases);
+recordedVideo.addEventListener('loadedmetadata', resizeCanvases);
+
+function startLiveDetection() {
+    async function detectLiveFrame() {
+        if (!cocoSsdModel || liveVideo.paused || liveVideo.ended) {
+            requestAnimationFrame(detectLiveFrame);
+            return;
         }
 
-        async function populateCameraSelect() {
-            const cameras = await getCameraDevices();
-            cameraSelect.innerHTML = '';
-            cameras.forEach((cam, idx) => {
-                const option = document.createElement('option');
-                option.value = cam.deviceId;
-                option.textContent = cam.label || `Camera ${idx + 1}`;
-                cameraSelect.appendChild(option);
+        // Check if enough time has passed to run the next detection
+        const now = Date.now();
+        const elapsed = now - then;
+        if (elapsed < fpsInterval) {
+            requestAnimationFrame(detectLiveFrame);
+            return;
+        }
+        then = now;
+
+        // Draw current video frame to canvas
+        liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
+
+        // skip model inference if start buttons isn't pushed
+        if (!(mediaRecorder && mediaRecorder.state === "recording")) {
+            requestAnimationFrame(detectLiveFrame);
+            return;
+        }
+
+        // Use hidden canvas for better performance
+        hiddenCtx.drawImage(liveVideo, 0, 0, detectionWidth, detectionHeight);
+        const predictions = await cocoSsdModel.detect(hiddenCanvas);
+        predictions.forEach(pred => {
+            // Scale bbox to liveCanvas size
+            const scaleX = liveCanvas.width / detectionWidth;
+            const scaleY = liveCanvas.height / detectionHeight;
+            pred.bbox[0] *= scaleX;
+            pred.bbox[1] *= scaleY;
+            pred.bbox[2] *= scaleX;
+            pred.bbox[3] *= scaleY;
+        });
+        console.log('Live predictions:', predictions);
+
+        // Draw bounding boxes
+        liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+        liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
+        // Color palette for different object classes
+        const colorPalette = [
+            '#00FF00', '#FF0000', '#0000FF', '#FF00FF', '#00FFFF', '#FFA500', '#FFFF00', '#008000', '#800080', '#A52A2A'
+        ];
+        const classColor = {};
+        let colorIdx = 0;
+        predictions.forEach(pred => {
+            const [x, y, width, height] = pred.bbox;
+            if (!classColor[pred.class]) {
+                classColor[pred.class] = colorPalette[colorIdx % colorPalette.length];
+                colorIdx++;
+            }
+            const color = classColor[pred.class];
+            liveCtx.strokeStyle = color;
+            liveCtx.lineWidth = 2;
+            liveCtx.strokeRect(x, y, width, height);
+            liveCtx.font = '16px Arial';
+            liveCtx.fillStyle = color;
+            liveCtx.fillText(pred.class, x, y > 10 ? y - 5 : 10);
+            // save predicions to log
+            predictionLog.push({
+                timestamp: Date.now(),
+                class: pred.class,
+                score: pred.score,
+                bbox: pred.bbox
             });
-            // If no camera is selected, select the first
-            if (!selectedDeviceId && cameras.length > 0) {
-                selectedDeviceId = cameras[0].deviceId;
-                cameraSelect.value = selectedDeviceId;
-            }
-        }
-
-        async function startCameraStream(deviceId) {
-            if (currentStream) {
-                currentStream.getTracks().forEach(track => track.stop());
-            }
-            try {
-                const constraints = { video: { deviceId: deviceId ? { exact: deviceId } : undefined }, audio: false };
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                liveVideo.srcObject = stream;
-                currentStream = stream;
-            } catch (err) {
-                console.error('Error starting camera stream:', err);
-                statusDiv.innerText = 'Error accessing selected camera.';
-            }
-        }
-
-        cameraSelect.addEventListener('change', async (e) => {
-            selectedDeviceId = cameraSelect.value;
-            await startCameraStream(selectedDeviceId);
         });
 
-        refreshCamerasBtn.addEventListener('click', async () => {
-            await populateCameraSelect();
-        });
+        requestAnimationFrame(detectLiveFrame);
+    }
+    detectLiveFrame();
+}
 
-        // --- Initialization ---
-        async function initialize() {
-            await populateCameraSelect();
-            await startCameraStream(selectedDeviceId);
-            try {
-                // Load the COCO-SSD model
-                statusDiv.innerText = "Loading TensorFlow.js model...";
-                // load a lightweight version for performance
-                cocoSsdModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-                statusDiv.innerText = "Model loaded. Ready to record.";
-                // Start live detection
-                startLiveDetection();
-            } catch (err) {
-                console.error("Error initializing:", err);
-                statusDiv.innerText = "Error loading model. Please refresh.";
-            }
+// 2. Recording Logic
+startRecordingBtn.addEventListener('click', () => {
+    recordedChunks = []; // reset
+    predictionLog = []; // reset
+    // Capture the liveCanvas stream (includes overlay)
+    const canvasStream = liveCanvas.captureStream(30); // 30 FPS
+    mediaRecorder = new MediaRecorder(canvasStream);
+
+    mediaRecorder.ondataavailable = event => {
+        if (event.data.size > 0) {
+            recordedChunks.push(event.data);
         }
+    };
 
-        initialize();
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        recordedVideo.src = url;
+        saveVideoToIndexedDB(blob, predictionLog);
 
-        // Live detection logic
-        const liveCanvas = document.getElementById('liveCanvas');
-        const liveCtx = liveCanvas.getContext('2d');
-
-        // Responsive canvas sizing
-        function resizeCanvases() {
-            const videoWrappers = document.querySelectorAll('.video-wrapper');
-            videoWrappers.forEach(wrapper => {
-                const video = wrapper.querySelector('video');
-                const canvas = wrapper.querySelector('canvas');
-                if (video && canvas) {
-                    // Set canvas size to match video size
-                    canvas.width = video.videoWidth || 640;
-                    canvas.height = video.videoHeight || 480;
-                }
-            });
-        }
-        window.addEventListener('resize', resizeCanvases);
-        liveVideo.addEventListener('loadedmetadata', resizeCanvases);
-        recordedVideo.addEventListener('loadedmetadata', resizeCanvases);
-
-        function startLiveDetection() {
-            async function detectLiveFrame() {
-                if (!cocoSsdModel || liveVideo.paused || liveVideo.ended) {
-                    requestAnimationFrame(detectLiveFrame);
-                    return;
-                }
-
-                // Check if enough time has passed to run the next detection
-                const now = Date.now();
-                const elapsed = now - then;
-                if (elapsed < fpsInterval) {
-                    requestAnimationFrame(detectLiveFrame);
-                    return;
-                }
-                then = now;
-
-                // Draw current video frame to canvas
-                liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
-                // Run detection
-                // const predictions = await cocoSsdModel.detect(liveCanvas);
-
-                // Use hidden canvas for better performance
-                hiddenCtx.drawImage(liveVideo, 0, 0, detectionWidth, detectionHeight);
-                const predictions = await cocoSsdModel.detect(hiddenCanvas);
-                predictions.forEach(pred => {
-                    // Scale bbox to liveCanvas size
-                    const scaleX = liveCanvas.width / detectionWidth;
-                    const scaleY = liveCanvas.height / detectionHeight;
-                    pred.bbox[0] *= scaleX;
-                    pred.bbox[1] *= scaleY;
-                    pred.bbox[2] *= scaleX;
-                    pred.bbox[3] *= scaleY;
-                });
-                console.log('Live predictions:', predictions);
-
-                // Draw bounding boxes
-                liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
-                liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
-                // Color palette for different object classes
-                const colorPalette = [
-                    '#00FF00', '#FF0000', '#0000FF', '#FF00FF', '#00FFFF', '#FFA500', '#FFFF00', '#008000', '#800080', '#A52A2A'
-                ];
-                const classColor = {};
-                let colorIdx = 0;
-                predictions.forEach(pred => {
-                    const [x, y, width, height] = pred.bbox;
-                    if (!classColor[pred.class]) {
-                        classColor[pred.class] = colorPalette[colorIdx % colorPalette.length];
-                        colorIdx++;
-                    }
-                    const color = classColor[pred.class];
-                    liveCtx.strokeStyle = color;
-                    liveCtx.lineWidth = 2;
-                    liveCtx.strokeRect(x, y, width, height);
-                    liveCtx.font = '16px Arial';
-                    liveCtx.fillStyle = color;
-                    liveCtx.fillText(pred.class, x, y > 10 ? y - 5 : 10);
-                });
-                requestAnimationFrame(detectLiveFrame);
-            }
-            detectLiveFrame();
-        }
-
-        // 2. Recording Logic
-        startRecordingBtn.addEventListener('click', () => {
-            recordedChunks = [];
-            // Capture the liveCanvas stream (includes overlay)
-            const canvasStream = liveCanvas.captureStream(30); // 30 FPS
-            mediaRecorder = new MediaRecorder(canvasStream);
-
-            mediaRecorder.ondataavailable = event => {
-                if (event.data.size > 0) {
-                    recordedChunks.push(event.data);
-                }
-            };
-
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                const url = URL.createObjectURL(blob);
-                recordedVideo.src = url;
-                saveVideoToIndexedDB(blob);
-                detectMovementInVideo();
-                // Enable download button and set up download
-                downloadVideoBtn.disabled = false;
-                downloadVideoBtn.onclick = () => {
-                    const dlAnchor = document.createElement('a');
-                    dlAnchor.href = url;
-                    dlAnchor.download = 'recorded_video.webm';
-                    document.body.appendChild(dlAnchor);
-                    dlAnchor.click();
-                    dlAnchor.remove();
-                };
-            };
-
-            mediaRecorder.start();
-            startRecordingBtn.disabled = true;
-            stopRecordingBtn.disabled = false;
-            statusDiv.innerText = "Recording...";
-        });
-
-        stopRecordingBtn.addEventListener('click', () => {
-            mediaRecorder.stop();
-            startRecordingBtn.disabled = false;
-            stopRecordingBtn.disabled = true;
-            statusDiv.innerText = "Processing video...";
-            // Disable download button until new video is available
-            downloadVideoBtn.disabled = true;
-        });
-
-        // 3. Movement Detection Logic
-        async function detectMovementInVideo() {
-            recordedVideo.play();
-            lastObjectPositions = {};
-            detectionLog = [];
-            downloadLogBtn.disabled = true;
-
-            // Helper to get current video time in seconds
-            function getCurrentTimestamp() {
-                return recordedVideo.currentTime;
-            }
-
-            // Helper: check if two bboxes are close (for tracking)
-            function bboxClose(b1, b2, threshold = 30) {
-                const dx = Math.abs(b1[0] - b2[0]);
-                const dy = Math.abs(b1[1] - b2[1]);
-                return dx < threshold && dy < threshold;
-            }
-
-            // Real-time log update function: add a row for each detection event
-            function addLogRow(entry, idx) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${idx + 1}</td>
-                    <td>${entry.label}</td>
-                    <td>${entry.start.toFixed(2)}</td>
-                    <td>${entry.end !== undefined ? entry.end.toFixed(2) : ''}</td>
-                    <td>[${entry.bbox.map(v => v.toFixed(0)).join(', ')}]</td>
-                `;
-                logTableBody.appendChild(tr);
-            }
-
-            function clearLogTable() {
-                while (logTableBody.firstChild) logTableBody.removeChild(logTableBody.firstChild);
-            }
-
-            recordedVideo.addEventListener('play', () => {
-                clearLogTable();
-                const detectFrame = async () => {
-                    if (recordedVideo.paused || recordedVideo.ended) {
-                        statusDiv.innerText = "Object detection finished.";
-                        downloadLogBtn.disabled = false;
-                        return;
-                    }
-
-                    detectionCtx.drawImage(recordedVideo, 0, 0, detectionCanvas.width, detectionCanvas.height);
-                    const predictions = await cocoSsdModel.detect(detectionCanvas);
-
-                    // Draw all bounding boxes and log detections
-                    detectionCtx.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height);
-                    detectionCtx.drawImage(recordedVideo, 0, 0, detectionCanvas.width, detectionCanvas.height);
-
-                    const currentDetections = {};
-                    // Color palette for different object classes
-                    const colorPalette = [
-                        '#00FF00', '#FF0000', '#0000FF', '#FF00FF', '#00FFFF', '#FFA500', '#FFFF00', '#008000', '#800080', '#A52A2A'
-                    ];
-                    const classColor = {};
-                    let colorIdx = 0;
-                    predictions.forEach(pred => {
-                        const [x, y, width, height] = pred.bbox;
-                        // Assign a color per class
-                        if (!classColor[pred.class]) {
-                            classColor[pred.class] = colorPalette[colorIdx % colorPalette.length];
-                            colorIdx++;
-                        }
-                        const color = classColor[pred.class];
-                        // Draw bounding box
-                        detectionCtx.strokeStyle = color;
-                        detectionCtx.lineWidth = 2;
-                        detectionCtx.strokeRect(x, y, width, height);
-                        detectionCtx.font = '16px Arial';
-                        detectionCtx.fillStyle = color;
-                        detectionCtx.fillText(pred.class, x, y > 10 ? y - 5 : 10);
-
-                        // Track detections for logging
-                        currentDetections[pred.class] = currentDetections[pred.class] || [];
-                        currentDetections[pred.class].push({
-                            bbox: [x, y, width, height],
-                            score: pred.score
-                        });
-
-                        // Movement tracking (simple: compare to last position)
-                        if (lastObjectPositions[pred.class]) {
-                            const last = lastObjectPositions[pred.class][0];
-                            const dx = Math.abs(x - last.bbox[0]);
-                            const dy = Math.abs(y - last.bbox[1]);
-                            const distance = Math.sqrt(dx * dx + dy * dy);
-                            if (distance > 10) {
-                                statusDiv.innerText = `Movement Detected: ${pred.class}`;
-                            }
-                        }
-                    });
-
-                    // Log detection events (start/end timestamps, label, bbox)
-                    Object.keys(currentDetections).forEach(label => {
-                        currentDetections[label].forEach(obj => {
-                            // Find if this object is already in the log (by label and bbox proximity)
-                            let found = false;
-                            for (let entry of detectionLog) {
-                                if (entry.label === label && bboxClose(entry.bbox, obj.bbox)) {
-                                    entry.end = getCurrentTimestamp();
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            if (!found) {
-                                const newEntry = {
-                                    label: label,
-                                    start: getCurrentTimestamp(),
-                                    end: getCurrentTimestamp(),
-                                    bbox: obj.bbox
-                                };
-                                detectionLog.push(newEntry);
-                                addLogRow(newEntry, detectionLog.length - 1);
-                            }
-                        });
-                    });
-
-                    // Remove objects from log if not detected anymore (end timestamp is set)
-                    detectionLog.forEach((entry, idx) => {
-                        const stillDetected = currentDetections[entry.label] && currentDetections[entry.label].some(obj => bboxClose(obj.bbox, entry.bbox));
-                        if (!stillDetected && entry.end === entry.start) {
-                            entry.end = getCurrentTimestamp();
-                            // Update the table row for end time
-                            const row = logTableBody.children[idx];
-                            if (row) row.children[3].textContent = entry.end.toFixed(2);
-                        }
-                    });
-
-                    lastObjectPositions = currentDetections;
-                    requestAnimationFrame(detectFrame);
-                };
-                detectFrame();
-            });
-        }
-
-        // Download detection log as JSON
-        downloadLogBtn.addEventListener('click', () => {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(detectionLog, null, 2));
+        // Enable download button and set up download
+        downloadVideoBtn.disabled = false;
+        downloadVideoBtn.onclick = () => {
             const dlAnchor = document.createElement('a');
-            dlAnchor.setAttribute("href", dataStr);
-            dlAnchor.setAttribute("download", "detection_log.json");
+            dlAnchor.href = url;
+            dlAnchor.download = 'recorded_video.webm';
             document.body.appendChild(dlAnchor);
             dlAnchor.click();
             dlAnchor.remove();
-        });
+        };
+    };
+
+    mediaRecorder.start();
+    startRecordingBtn.disabled = true;
+    stopRecordingBtn.disabled = false;
+    statusDiv.innerText = "Recording...";
+});
+
+stopRecordingBtn.addEventListener('click', () => {
+    mediaRecorder.stop();
+    startRecordingBtn.disabled = false;
+    stopRecordingBtn.disabled = true;
+    statusDiv.innerText = "Processing video...";
+    // Disable download button until new video is available
+    downloadVideoBtn.disabled = true;
+});
 
 
-        // 4. Local Storage with IndexedDB
-        function saveVideoToIndexedDB(blob) {
-            const dbName = "videoDB";
-            const request = indexedDB.open(dbName, 1);
+// Download detection log as JSON
+downloadLogBtn.addEventListener('click', () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(detectionLog, null, 2));
+    const dlAnchor = document.createElement('a');
+    dlAnchor.setAttribute("href", dataStr);
+    dlAnchor.setAttribute("download", "detection_log.json");
+    document.body.appendChild(dlAnchor);
+    dlAnchor.click();
+    dlAnchor.remove();
+});
 
-            request.onupgradeneeded = event => {
-                const db = event.target.result;
-                db.createObjectStore("videos", { keyPath: "id", autoIncrement: true });
-            };
+// 5. List all videos stored in IndexedDB
+function loadStoredVideos() {
+    const dbName = "videoDB";
+    const request = indexedDB.open(dbName, 1);
+    request.onsuccess = event => {
+        const db = event.target.result;
+        const transaction = db.transaction(["videos"], "readonly");
+        const store = transaction.objectStore("videos");
+        const getAllRequest = store.getAll();
+        getAllRequest.onsuccess = () => {
+            renderStoredVideosTable(getAllRequest.result);
+        };
+    };
+    request.onerror = event => {
+        console.error("Error opening IndexedDB:", event.target.errorCode);
+    };
+}
 
-            request.onsuccess = event => {
-                const db = event.target.result;
-                const transaction = db.transaction(["videos"], "readwrite");
-                const store = transaction.objectStore("videos");
-                store.add({ video: blob, timestamp: new Date() });
+function renderStoredVideosTable(videos) {
+    const tbody = document.querySelector('#storedVideosTable tbody');
+    tbody.innerHTML = '';
+    videos.forEach((entry, idx) => {
+        const tr = document.createElement('tr');
+        const dateStr = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '';
+        const sizeKB = entry.video && entry.video.size ? (entry.video.size / 1024).toFixed(1) : '';
+        tr.innerHTML = `
+            <td>${idx + 1}</td>
+            <td>${dateStr}</td>
+            <td>${sizeKB}</td>
+            <td><button class="button is-link is-small" data-idx="${idx}" data-action="download">Download</button></td>
+            <td><button class="button is-danger is-small" data-idx="${idx}" data-action="delete">Delete</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
 
-                transaction.oncomplete = () => {
-                    console.log("Video saved to IndexedDB.");
-                };
-                transaction.onerror = (err) => {
-                    console.error("Error saving video:", err);
-                };
-            };
+    // Add event listeners for download and delete
+    tbody.querySelectorAll('button[data-action="download"]').forEach(btn => {
+        btn.onclick = () => {
+            const entry = videos[parseInt(btn.getAttribute('data-idx'))];
+            const url = URL.createObjectURL(entry.video);
+            const dlAnchor = document.createElement('a');
+            dlAnchor.href = url;
+            dlAnchor.download = `video_${entry.timestamp ? new Date(entry.timestamp).toISOString().replace(/[:.]/g, '-') : 'unknown'}.webm`;
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        };
+    });
+    tbody.querySelectorAll('button[data-action="delete"]').forEach(btn => {
+        btn.onclick = () => {
+            const idx = parseInt(btn.getAttribute('data-idx'));
+            deleteVideoByIndex(idx, videos);
+        };
+    });
+}
 
-            request.onerror = event => {
-                console.error("Error opening IndexedDB:", event.target.errorCode);
-            };
-        }
+function deleteVideoByIndex(idx, videos) {
+    const dbName = "videoDB";
+    const request = indexedDB.open(dbName, 1);
+    request.onsuccess = event => {
+        const db = event.target.result;
+        const transaction = db.transaction(["videos"], "readwrite");
+        const store = transaction.objectStore("videos");
+        const key = videos[idx].id;
+        const deleteRequest = store.delete(key);
+        deleteRequest.onsuccess = () => {
+            loadStoredVideos();
+        };
+        deleteRequest.onerror = err => {
+            console.error("Error deleting video:", err);
+        };
+    };
+}
 
-        // 5. List all videos stored in IndexedDB
-        function loadStoredVideos() {
-            const dbName = "videoDB";
-            const request = indexedDB.open(dbName, 1);
-            request.onsuccess = event => {
-                const db = event.target.result;
-                const transaction = db.transaction(["videos"], "readonly");
-                const store = transaction.objectStore("videos");
-                const getAllRequest = store.getAll();
-                getAllRequest.onsuccess = () => {
-                    renderStoredVideosTable(getAllRequest.result);
-                };
-            };
-            request.onerror = event => {
-                console.error("Error opening IndexedDB:", event.target.errorCode);
-            };
-        }
+// Call loadStoredVideos on page load and after saving a video
+window.addEventListener('DOMContentLoaded', loadStoredVideos);
 
-        function renderStoredVideosTable(videos) {
-            const tbody = document.querySelector('#storedVideosTable tbody');
-            tbody.innerHTML = '';
-            videos.forEach((entry, idx) => {
-                const tr = document.createElement('tr');
-                const dateStr = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '';
-                const sizeKB = entry.video && entry.video.size ? (entry.video.size / 1024).toFixed(1) : '';
-                tr.innerHTML = `
-                    <td>${idx + 1}</td>
-                    <td>${dateStr}</td>
-                    <td>${sizeKB}</td>
-                    <td><button class="button is-link is-small" data-idx="${idx}" data-action="download">Download</button></td>
-                    <td><button class="button is-danger is-small" data-idx="${idx}" data-action="delete">Delete</button></td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            // Add event listeners for download and delete
-            tbody.querySelectorAll('button[data-action="download"]').forEach(btn => {
-                btn.onclick = () => {
-                    const entry = videos[parseInt(btn.getAttribute('data-idx'))];
-                    const url = URL.createObjectURL(entry.video);
-                    const dlAnchor = document.createElement('a');
-                    dlAnchor.href = url;
-                    dlAnchor.download = `video_${entry.timestamp ? new Date(entry.timestamp).toISOString().replace(/[:.]/g, '-') : 'unknown'}.webm`;
-                    document.body.appendChild(dlAnchor);
-                    dlAnchor.click();
-                    dlAnchor.remove();
-                    setTimeout(() => URL.revokeObjectURL(url), 1000);
-                };
-            });
-            tbody.querySelectorAll('button[data-action="delete"]').forEach(btn => {
-                btn.onclick = () => {
-                    const idx = parseInt(btn.getAttribute('data-idx'));
-                    deleteVideoByIndex(idx, videos);
-                };
-            });
-        }
-
-        function deleteVideoByIndex(idx, videos) {
-            const dbName = "videoDB";
-            const request = indexedDB.open(dbName, 1);
-            request.onsuccess = event => {
-                const db = event.target.result;
-                const transaction = db.transaction(["videos"], "readwrite");
-                const store = transaction.objectStore("videos");
-                const key = videos[idx].id;
-                const deleteRequest = store.delete(key);
-                deleteRequest.onsuccess = () => {
-                    loadStoredVideos();
-                };
-                deleteRequest.onerror = err => {
-                    console.error("Error deleting video:", err);
-                };
-            };
-        }
-
-        // Call loadStoredVideos on page load and after saving a video
-        window.addEventListener('DOMContentLoaded', loadStoredVideos);
-        const originalSaveVideoToIndexedDB = saveVideoToIndexedDB;
-        function saveVideoToIndexedDB(blob) {
-            const dbName = "videoDB";
-            const request = indexedDB.open(dbName, 1);
-            request.onupgradeneeded = event => {
-                const db = event.target.result;
-                db.createObjectStore("videos", { keyPath: "id", autoIncrement: true });
-            };
-            request.onsuccess = event => {
-                const db = event.target.result;
-                const transaction = db.transaction(["videos"], "readwrite");
-                const store = transaction.objectStore("videos");
-                store.add({ video: blob, timestamp: new Date() });
-                transaction.oncomplete = () => {
-                    console.log("Video saved to IndexedDB.");
-                    loadStoredVideos();
-                };
-                transaction.onerror = (err) => {
-                    console.error("Error saving video:", err);
-                };
-            };
-            request.onerror = event => {
-                console.error("Error opening IndexedDB:", event.target.errorCode);
-            };
-        }
+function saveVideoToIndexedDB(blob, predictionLog) {
+    const dbName = "videoDB";
+    const request = indexedDB.open(dbName, 1);
+    request.onupgradeneeded = event => {
+        const db = event.target.result;
+        db.createObjectStore("videos", { keyPath: "id", autoIncrement: true });
+    };
+    request.onsuccess = event => {
+        const db = event.target.result;
+        const transaction = db.transaction(["videos"], "readwrite");
+        const store = transaction.objectStore("videos");
+        // Save the detectionLog (predictions) together with the video
+        store.add({ video: blob, timestamp: new Date(), predictions: Array.isArray(predictionLog) ? predictionLog.slice() : [] });
+        transaction.oncomplete = () => {
+            console.log("Video and predictions saved to IndexedDB.");
+            loadStoredVideos();
+        };
+        transaction.onerror = (err) => {
+            console.error("Error saving video:", err);
+        };
+    };
+    request.onerror = event => {
+        console.error("Error opening IndexedDB:", event.target.errorCode);
+    };
+}
     </script>
 </body>
 
