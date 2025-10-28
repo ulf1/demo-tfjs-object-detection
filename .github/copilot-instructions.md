@@ -20,11 +20,91 @@ Default frameworks, libraries, and tools.
 ### (1.2) Code Style
 Formatting rules, naming conventions, and preferences.
 
+#### (1.2.1) HTML Requirements
+- **HTML**:
+- Use HTML5 semantic elements (`<header>`, `<nav>`, `<main>`, `<section>`, `<article>`, `<footer>`, `<search>`, etc.)
+- Include appropriate ARIA attributes for accessibility
+- Ensure valid markup that passes W3C validation
+- Use responsive design practices
+- Optimize images using modern formats (`WebP`, `AVIF`)
+- Include `loading="lazy"` on images where applicable
+- Generate `srcset` and `sizes` attributes for responsive images when relevant
+- Prioritize SEO-friendly elements (`<title>`, `<meta description>`, Open Graph tags)
+		
+            
+#### (1.2.2) JavaScript Requirements  
+- **Minimum Compatibility**: ECMAScript 2020 (ES11) or higher
+- **Features to Use**:
+- Arrow functions
+- Template literals
+- Destructuring assignment
+- Spread/rest operators
+- Async/await for asynchronous code
+- Classes with proper inheritance when OOP is needed
+- Object shorthand notation
+- Optional chaining (`?.`)
+- Nullish coalescing (`??`)
+- Dynamic imports
+- BigInt for large integers
+- `Promise.allSettled()`
+- `String.prototype.matchAll()`
+- `globalThis` object
+- Private class fields and methods
+- Export * as namespace syntax
+- Array methods (`map`, `filter`, `reduce`, `flatMap`, etc.)
+- **Avoid**:
+- `var` keyword (use `const` and `let`)
+- jQuery or any external libraries
+- Callback-based asynchronous patterns when promises can be used
+- Internet Explorer compatibility
+- Legacy module formats (use ES modules)
+- Limit use of `eval()` due to security risks
+- **Performance Considerations:**
+- Recommend code splitting and dynamic imports for lazy loading
+**Error Handling**:
+- Use `try-catch` blocks **consistently** for asynchronous and API calls, and handle promise rejections explicitly.
+- Differentiate among:
+- **Network errors** (e.g., timeouts, server errors, rate-limiting)
+- **Functional/business logic errors** (logical missteps, invalid user input, validation failures)
+- **Runtime exceptions** (unexpected errors such as null references)
+- Provide **user-friendly** error messages (e.g., “Something went wrong. Please try again shortly.”) and log more technical details to dev/ops (e.g., via a logging service).
+- Consider a central error handler function or global event (e.g., `window.addEventListener('unhandledrejection')`) to consolidate reporting.
+- Carefully handle and validate JSON responses, incorrect HTTP status codes, etc.
+   
 
 ### (1.3) Best Practices 
 Development philosophy (e.g., TDD, commit patterns, etc.).
 
+#### (1.3.1) MAKING EDITS
+- Focus on one conceptual change at a time
+- Show clear "before" and "after" snippets when proposing changes
+- Include concise explanations of what changed and why
+- Always check if the edit maintains the project's coding style
 
+#### (1.3.2) Edit sequence:
+1. [First specific change] - Purpose: [why]
+2. [Second specific change] - Purpose: [why]
+3. Do you approve this plan? I'll proceed with Edit [number] after your confirmation.
+4. WAIT for explicit user confirmation before making ANY edits when user ok edit [number]
+            
+#### (1.3.3) EXECUTION PHASE
+- After each individual edit, clearly indicate progress:
+	"✅ Completed edit [#] of [total]. Ready for next edit?"
+- If you discover additional needed changes during editing:
+- STOP and update the plan
+- Get approval before continuing
+
+#### (1.3.4) REFACTORING GUIDANCE
+When refactoring large files:
+- Break work into logical, independently functional chunks
+- Ensure each intermediate state maintains functionality
+- Consider temporary duplication as a valid interim step
+- Always indicate the refactoring pattern being applied
+
+#### (1.3.5) RATE LIMIT AVOIDANCE
+- For very large files, suggest splitting changes across multiple sessions
+- Prioritize changes that are logically complete units
+- Always provide clear stopping points
 
 ## (2) Product
 Product are the mission, architecture, roadmap, and decisions.
