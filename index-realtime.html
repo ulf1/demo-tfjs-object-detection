@@ -78,6 +78,7 @@
         </div>
         <div class="buttons is-centered mb-4">
         <div class="has-text-centered mb-4">
+            <button id="toggleCameraBtn" class="button is-info" style="margin-right: 1em;">Stop Camera</button>
             <button id="toggleDetectionBtn" class="button is-warning">Start Detection</button>
         </div>
             <!-- Recording buttons removed for realtime-only mode -->
@@ -102,6 +103,25 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 
     <script>
+let cameraActive = true;
+const toggleCameraBtn = document.getElementById('toggleCameraBtn');
+if (toggleCameraBtn) {
+    toggleCameraBtn.addEventListener('click', async () => {
+        if (cameraActive) {
+            // Stop all video tracks
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                liveVideo.srcObject = null;
+            }
+            cameraActive = false;
+            toggleCameraBtn.textContent = 'Start Camera';
+        } else {
+            await startCameraStream(selectedDeviceId);
+            cameraActive = true;
+            toggleCameraBtn.textContent = 'Stop Camera';
+        }
+    });
+}
 let detectionActive = false;
 const toggleDetectionBtn = document.getElementById('toggleDetectionBtn');
 if (toggleDetectionBtn) {
@@ -277,7 +297,7 @@ function startLiveDetection() {
             liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
             return;
         }
-        
+
         // Use hidden canvas for better performance
         hiddenCtx.drawImage(liveVideo, 0, 0, detectionWidth, detectionHeight);
         const predictions = await cocoSsdModel.detect(hiddenCanvas);
