@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Bulma CSS Framework -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <title>Object Detection</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin-top: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        video,
+        canvas {
+            border: 1px solid #ccc;
+            margin-top: 1rem;
+            width: 100%;
+            height: auto;
+        }
+
+        #liveCanvas,
+        #detectionCanvas {
+            position: absolute;
+            left: 0;
+            top: 0;
+            pointer-events: none;
+        }
+
+        #status {
+            font-weight: bold;
+            color: green;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                max-width: 100%;
+                padding: 0 0.5rem;
+            }
+
+            video,
+            canvas {
+                width: 100%;
+                height: auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1 class="title is-3 has-text-centered">Detect Objects</h1>
+        
+        <!-- Camera Selection UI -->
+        <div class="field has-addons is-justify-content-center mb-4">
+            <div class="control">
+                <div class="select">
+                    <select id="cameraSelect"></select>
+                </div>
+            </div>
+            <div class="control">
+                <button id="refreshCameras" class="button is-light" title="Refresh camera list">🔄</button>
+            </div>
+        </div>
+
+        <div class="buttons is-centered mb-4">
+            <div class="has-text-centered mb-4">
+                <button id="toggleCameraBtn" class="button is-info" style="margin-right: 1em;">Stop Camera</button>
+                <button id="toggleDetectionBtn" class="button is-warning">Start Detection</button>
+                <button id="downloadPredictionsBtn" class="button is-link">Download JSON</button>
+                <button id="resetPredictionsBtn" class="button is-link">Reset Predictions</button>
+            </div>
+            <!-- Recording buttons removed for realtime-only mode -->
+            <div class="field ml-4" style="display:inline-block; vertical-align:middle;">
+                <label class="label" for="fpsSlider" style="margin-bottom:0;">FPS: <span id="fpsValue">5</span></label>
+                <div class="control">
+                    <input id="fpsSlider" type="range" min="1" max="20" value="5" style="width:140px; display:inline-block; vertical-align:middle;" />
+                </div>
+                <p class="help" style="font-size:0.9em;">Frames per second (1-20)</p>
+            </div>
+        </div>
+
+
+        <h2 class="subtitle is-4 has-text-centered">Live Camera Feed</h2>
+        <div id="status" class="mt-3 has-text-centered"></div>
+        <div class="video-wrapper" style="max-width: 900px; margin: auto;">
+            <video id="liveVideo" autoplay muted></video>
+            <canvas id="liveCanvas"></canvas>
+        </div>
+
+        <!-- Predictions Table -->
+        <div class="mt-5">
+            <h3 class="subtitle is-5 has-text-centered">Latest Predictions</h3>
+            <div style="overflow-x:auto;">
+                <table class="table is-striped is-fullwidth" id="predictionsTable">
+                    <thead>
+                        <tr>
+                            <th>Class</th>
+                            <th>BBox [x, y, w, h]</th>
+                            <th>Score (%)</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+
+    <script>
+let cameraActive = true;
+const toggleCameraBtn = document.getElementById('toggleCameraBtn');
+if (toggleCameraBtn) {
+    toggleCameraBtn.addEventListener('click', async () => {
+        if (cameraActive) {
+            // Stop all video tracks
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                liveVideo.srcObject = null;
+            }
+            cameraActive = false;
+            toggleCameraBtn.textContent = 'Start Camera';
+        } else {
+            await startCameraStream(selectedDeviceId);
+            cameraActive = true;
+            toggleCameraBtn.textContent = 'Stop Camera';
+        }
+    });
+}
+let detectionActive = false;
+const toggleDetectionBtn = document.getElementById('toggleDetectionBtn');
+if (toggleDetectionBtn) {
+    toggleDetectionBtn.addEventListener('click', () => {
+        detectionActive = !detectionActive;
+        if (detectionActive) {
+            toggleDetectionBtn.textContent = 'Stop Detection';
+            startLiveDetection();
+        } else {
+            toggleDetectionBtn.textContent = 'Start Detection';
+        }
+    });
+}
+const liveVideo = document.getElementById('liveVideo');
+const cameraSelect = document.getElementById('cameraSelect');
+const refreshCamerasBtn = document.getElementById('refreshCameras');
+const statusDiv = document.getElementById('status');
+
+// run inference on a smaller hidden canvas for performance
+const hiddenCanvas = document.createElement('canvas');
+const hiddenCtx = hiddenCanvas.getContext('2d');
+const detectionWidth = 320; // A smaller width for detection
+const detectionHeight = 240; // A smaller height
+hiddenCanvas.width = detectionWidth;
+hiddenCanvas.height = detectionHeight;
+
+// --- FPS Limiter Variables ---
+const fpsSlider = document.getElementById('fpsSlider');
+const fpsValue = document.getElementById('fpsValue');
+let fps = parseInt(fpsSlider?.value, 10) || 5; // Target frames per second
+let fpsInterval = 1000 / fps; // The required time between frames in milliseconds
+let then = Date.now(); // The timestamp of the last executed frame
+let startTime = then; // For calculating average FPS
+
+if (fpsSlider && fpsValue) {
+    fpsSlider.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val) || val < 1) val = 1;
+        if (val > 20) val = 20;
+        fps = val;
+        fpsInterval = 1000 / fps;
+        fpsSlider.value = val;
+        fpsValue.textContent = val;
+    });
+    // Initialize label
+    fpsValue.textContent = fpsSlider.value;
+}
+
+
+let cocoSsdModel = null;
+
+// 1. Initialize - Get Webcam Feed and Load Model
+
+
+// --- Camera Detection and Selection ---
+let currentStream = null;
+let selectedDeviceId = null;
+
+async function getCameraDevices() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices.filter(device => device.kind === 'videoinput');
+    } catch (err) {
+        console.error('Error enumerating devices:', err);
+        return [];
+    }
+}
+
+async function populateCameraSelect() {
+    const cameras = await getCameraDevices();
+    cameraSelect.innerHTML = '';
+    cameras.forEach((cam, idx) => {
+        const option = document.createElement('option');
+        option.value = cam.deviceId;
+        option.textContent = cam.label || `Camera ${idx + 1}`;
+        cameraSelect.appendChild(option);
+    });
+    // If no camera is selected, select the first
+    if (!selectedDeviceId && cameras.length > 0) {
+        selectedDeviceId = cameras[0].deviceId;
+        cameraSelect.value = selectedDeviceId;
+    }
+}
+
+async function startCameraStream(deviceId) {
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+    }
+    try {
+        const constraints = { video: { deviceId: deviceId ? { exact: deviceId } : undefined }, audio: false };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        liveVideo.srcObject = stream;
+        currentStream = stream;
+    } catch (err) {
+        console.error('Error starting camera stream:', err);
+        statusDiv.innerText = 'Error accessing selected camera.';
+    }
+}
+
+cameraSelect.addEventListener('change', async (e) => {
+    selectedDeviceId = cameraSelect.value;
+    await startCameraStream(selectedDeviceId);
+});
+
+refreshCamerasBtn.addEventListener('click', async () => {
+    await populateCameraSelect();
+});
+
+// --- Initialization ---
+async function initialize() {
+    await populateCameraSelect();
+    await startCameraStream(selectedDeviceId);
+    try {
+        // Load the COCO-SSD model
+        statusDiv.innerText = "Loading TensorFlow.js model...";
+        // load a lightweight version for performance
+        cocoSsdModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+        statusDiv.innerText = "Model loaded. Ready to detect objects.";
+        // Start live detection
+        startLiveDetection();
+    } catch (err) {
+        console.error("Error initializing:", err);
+        statusDiv.innerText = "Error loading model. Please refresh.";
+    }
+}
+
+initialize();
+
+// Live detection logic
+const liveCanvas = document.getElementById('liveCanvas');
+const liveCtx = liveCanvas.getContext('2d');
+
+// Responsive canvas sizing
+function resizeCanvases() {
+    const videoWrappers = document.querySelectorAll('.video-wrapper');
+    videoWrappers.forEach(wrapper => {
+        const video = wrapper.querySelector('video');
+        const canvas = wrapper.querySelector('canvas');
+        if (video && canvas) {
+            // Set canvas size to match video size
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+        }
+    });
+}
+window.addEventListener('resize', resizeCanvases);
+liveVideo.addEventListener('loadedmetadata', resizeCanvases);
+// recordedVideo event removed
+
+function startLiveDetection() {
+    async function detectLiveFrame() {
+    
+        if (!cocoSsdModel || liveVideo.paused || liveVideo.ended) {
+            requestAnimationFrame(detectLiveFrame);
+            return;
+        }
+
+        // Check if enough time has passed to run the next detection
+        const now = Date.now();
+        const elapsed = now - then;
+        if (elapsed < fpsInterval) {
+            requestAnimationFrame(detectLiveFrame);
+            return;
+        }
+        then = now;
+
+        // Draw current video frame to canvas
+        liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
+        // Run detection
+        // const predictions = await cocoSsdModel.detect(liveCanvas);
+
+        if (!detectionActive) {
+            liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+            return;
+        }
+
+        // Use hidden canvas for better performance
+        hiddenCtx.drawImage(liveVideo, 0, 0, detectionWidth, detectionHeight);
+        const predictions = await cocoSsdModel.detect(hiddenCanvas);
+        predictions.forEach(pred => {
+            // Scale bbox to liveCanvas size
+            const scaleX = liveCanvas.width / detectionWidth;
+            const scaleY = liveCanvas.height / detectionHeight;
+            pred.bbox[0] *= scaleX;
+            pred.bbox[1] *= scaleY;
+            pred.bbox[2] *= scaleX;
+            pred.bbox[3] *= scaleY;
+            pred['timestamp'] = now;
+        });
+        // --- Update predictions table ---
+        updatePredictionsTable(predictions);
+        console.log('Live predictions:', predictions);
+
+
+        // Draw bounding boxes
+        liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+        liveCtx.drawImage(liveVideo, 0, 0, liveCanvas.width, liveCanvas.height);
+
+        // Color palette for different object classes
+        const colorPalette = [
+            '#00FF00', '#FF0000', '#0000FF', '#FF00FF', '#00FFFF', '#FFA500', '#FFFF00', '#008000', '#800080', '#A52A2A'
+        ];
+        const classColor = {};
+        let colorIdx = 0;
+        predictions.forEach(pred => {
+            const [x, y, width, height] = pred.bbox;
+            if (!classColor[pred.class]) {
+                classColor[pred.class] = colorPalette[colorIdx % colorPalette.length];
+                colorIdx++;
+            }
+            const color = classColor[pred.class];
+            liveCtx.strokeStyle = color;
+            liveCtx.lineWidth = 2;
+            liveCtx.strokeRect(x, y, width, height);
+            liveCtx.font = '16px Arial';
+            liveCtx.fillStyle = color;
+            liveCtx.fillText(pred.class, x, y > 10 ? y - 5 : 10);
+        });
+        requestAnimationFrame(detectLiveFrame);
+    }
+    detectLiveFrame();
+}
+
+
+// --- Predictions Table Logic ---
+const predictionsTableBody = document.querySelector('#predictionsTable tbody');
+let predictionsHistory = [];
+
+function updatePredictionsTable(predictions) {
+    if (!predictionsTableBody) return;
+    // Add latest predictions to the top of the history
+    if (predictions && predictions.length > 0) {
+        // Store a shallow copy of predictions (with timestamp)
+        predictionsHistory.unshift({
+            time: Date.now(),
+            preds: predictions.map(p => ({
+                class: p.class,
+                bbox: p.bbox.map(v => Math.round(v)),
+                score: Math.round(p.score * 1000) / 10, // 1 decimal
+                timestamp: p.timestamp
+            }))
+        });
+        // Limit history to 20 entries
+        if (predictionsHistory.length > 20) predictionsHistory.length = 20;
+    }
+    // Flatten history: show latest predictions at the top, one row per object
+    let rows = [];
+    for (let entry of predictionsHistory) {
+        for (let pred of entry.preds) {
+            rows.push(pred);
+        }
+    }
+    // Only show the latest 20 objects
+    rows = rows.slice(0, 20);
+    // Build table rows
+    predictionsTableBody.innerHTML = rows.map(pred =>
+        `<tr>
+            <td>${pred.class}</td>
+            <td>[${pred.bbox.join(', ')}]</td>
+            <td>${pred.score.toFixed(1)}</td>
+            <td>${new Date(pred.timestamp).toISOString()}</td>
+        </tr>`
+    ).join('');
+}
+
+// --- Download Predictions as JSON ---
+const downloadPredictionsBtn = document.getElementById('downloadPredictionsBtn');
+if (downloadPredictionsBtn) {
+    downloadPredictionsBtn.addEventListener('click', () => {
+        const dataStr = JSON.stringify(predictionsHistory, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `detected-objects-${ts}.json`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+    });
+}
+
+// --- Reset Predictions ---
+const resetPredictionsBtn = document.getElementById('resetPredictionsBtn');
+if (resetPredictionsBtn) {
+    resetPredictionsBtn.addEventListener('click', () => {
+        predictionsHistory = [];
+        updatePredictionsTable([]);
+    });
+}
+
+
+    </script>
+</body>
+
+</html>
