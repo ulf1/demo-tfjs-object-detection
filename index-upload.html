@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload & Annotate Video - Object Detection</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <style>
+        body { font-family: sans-serif; margin-top: 2rem; }
+        .container { max-width: 900px; margin: auto; }
+        video, canvas { border: 1px solid #ccc; margin-top: 1rem; width: 100%; height: auto; }
+        .modal.is-active { display: flex; }
+        .modal { display: none; align-items: center; justify-content: center; }
+        .modal-content { background: white; padding: 1rem; border-radius: 8px; }
+        .table-container { overflow-x: auto; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="title is-3 has-text-centered">Upload Video & Annotate with COCO-SSD</h1>
+    <div class="box mb-4">
+        <div class="field">
+            <label class="label">Select Video File</label>
+            <div class="control">
+                <input id="videoUpload" class="input" type="file" accept="video/*">
+            </div>
+        </div>
+        <div class="field mt-3">
+            <label class="label">Select Resolution</label>
+            <div class="control">
+                <div class="select">
+                    <select id="resolutionSelect">
+                        <option value="144">144p (256x144)</option>
+                        <option value="240">240p (426x240)</option>
+                        <option value="360">360p (640x360)</option>
+                        <option value="480">480p (854x480)</option>
+                        <option value="720">720p (1280x720)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="field mt-3">
+            <label class="label">Frames Per Second (FPS)</label>
+            <div class="control is-flex is-align-items-center">
+                <input id="fpsSlider" class="slider is-fullwidth" type="range" min="1" max="20" value="10" step="1" style="flex:1;">
+                <span id="fpsValue" style="margin-left:1em; min-width:2em;">10</span>
+            </div>
+        </div>
+        <button id="processBtn" class="button is-primary mt-4" disabled>Annotate Video</button>
+        <div id="status" class="mt-3 has-text-weight-bold"></div>
+    </div>
+    <div id="previewSection" style="display:none;">
+        <h2 class="subtitle is-4">Annotated Video Preview</h2>
+        <video id="annotatedVideo" controls></video>
+    </div>
+    <div class="table-container mt-6">
+        <h2 class="subtitle is-4">Annotated Videos</h2>
+        <table class="table is-fullwidth is-striped is-narrow" id="videosTable">
+            <thead>
+                <tr>
+                    <th>Length (mm:ss)</th>
+                    <th>Resolution</th>
+                    <th># Objects</th>
+                    <th>Log</th>
+                    <th>Video</th>
+                    <th>Delete</th>
+                    <th>Preview</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Populated by JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+<!-- Modal for video preview -->
+<div class="modal" id="previewModal">
+    <div class="modal-background"></div>
+    <div class="modal-content">
+        <video id="modalVideo" controls style="max-width:600px;"></video>
+    </div>
+    <button class="modal-close is-large" aria-label="close"></button>
+</div>
+<!-- TensorFlow.js and COCO-SSD -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+<script src="index-upload.js"></script>
+</body>
+</html>
